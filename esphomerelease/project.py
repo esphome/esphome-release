@@ -265,11 +265,8 @@ class Project:
 
     def does_branch_exist(self, branch: BranchType) -> bool:
         branch = self.lookup_branch(branch)
-        try:
-            self.run_git('branch', '--list', branch, fail_ok=True, silent=True)
-            return True
-        except EsphomeReleaseError:
-            return False
+        out = self.run_git('branch', '--list', branch, fail_ok=True, silent=True)
+        return bool(out)
 
     def checkout_new_branch(self, branch: BranchType):
         branch = self.lookup_branch(branch)
@@ -279,7 +276,7 @@ class Project:
                 self.run_git('git', 'branch', '-D', branch)
             else:
                 return
-        self.run_git('git', 'checkout', '-b', branch)
+        self.run_git('checkout', '-b', branch)
 
     def checkout_push(self, branch: BranchType):
         """Checkout `branch`, then push."""
