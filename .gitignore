@@ -182,3 +182,6 @@ dmypy.json
 .pyre/
 
 /data/
+
+/config.json
+/.vscode/settings.json

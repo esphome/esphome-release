@@ -1,58 +1,79 @@
-from distutils.version import StrictVersion
 import re
-
-from .git import get_log
-
-
-class LogLine:
-    PR_PATTERN = re.compile('\(#(\d+)\)')
-
-    def __init__(self, line):
-        # Strip off the '-' at the start
-        parts = line.split()[1:]
-
-        self.line = line
-        self.email = parts.pop()[1:-1]
-
-        pr_match = self.PR_PATTERN.match(parts[-1])
-
-        if pr_match:
-            self.pr = int(pr_match.groups(1)[0])
-            parts.pop()
-        else:
-            self.pr = None
-
-        self.message = ' '.join(parts)
+import enum
+from dataclasses import dataclass, replace
+from typing import Union
 
 
-class Release:
-    def __init__(self, version, source, target):
-        self.version = StrictVersion(version)
-        self.source = source
-        self.target = target
-        self._log_lines = {}
-        self._repos = {}
+class Branch(enum.Enum):
+    STABLE = 'stable'
+    BETA = 'beta'
+    DEV = 'dev'
 
-        if self.version.version[-1] == 0 and not self.version.prerelease:
-            vstring = '-'.join(map(str, self.version.version[:2]))
-        else:
-            vstring = '-'.join(map(str, self.version.version))
-        self.identifier = 'release-' + vstring
 
-        if self.version.prerelease:
-            pstring = ''.join(map(str, self.version.prerelease))
-            self.identifier = self.identifier + pstring
+BranchType = Union[str, Branch]
+
+
+@dataclass
+class Version:
+    major: int
+    minor: int
+    patch: int
+    beta: int = 0
+    dev: bool = False
+
+    def __str__(self):
+        return f'{self.major}.{self.minor}.{self.full_patch}'
 
     @property
-    def is_patch_release(self):
-        """Return if this is a patch release or not.
+    def full_patch(self):
+        res = f'{self.patch}'
+        if self.beta > 0:
+            res += f'b{self.beta}'
+        if self.dev:
+            res += '-dev'
+        return res
 
-        Patch release is when X in 0.0.X is not 0.
-        """
-        return self.version.version[-1] != 0
+    @classmethod
+    def parse(cls, value):
+        match = re.match(r'(\d+).(\d+).(\d+)(b\d+)?(-dev)?', value)
+        assert match is not None
+        major = int(match[1])
+        minor = int(match[2])
+        patch = int(match[3])
+        beta = 0
+        if match[4]:
+            beta = int(match[4][1:])
+            assert beta > 0
+        dev = bool(match[5])
+        assert not (beta and dev)
+        return Version(
+            major=major, minor=minor, patch=patch,
+            beta=beta, dev=dev
+        )
 
-    def log_lines(self, project):
-        if project.name not in self._log_lines:
-            lines = [LogLine(line) for line in get_log(project, self.source, self.target)]
-            self._log_lines[project.name] = lines
-        return self._log_lines[project.name]
+    @property
+    def next_dev_version(self):
+        return replace(
+            self,
+            minor=self.minor+1,
+            patch=0,
+            beta=0,
+            dev=True,
+        )
+
+    @property
+    def next_beta_version(self):
+        assert self.beta != 0
+        return replace(
+            self,
+            beta=self.beta+1
+        )
+
+    @property
+    def next_patch_version(self):
+        return replace(
+            self,
+            patch=self.patch+1,
+            beta=0,
+            dev=False
+        )

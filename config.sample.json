@@ -1,0 +1,8 @@
+{
+  "github_token": "<INSERT_YOUR_TOKEN>",
+  "esphome_path": "../esphome",
+  "esphome_docs_path": "../esphome-docs",
+  "esphome_hassio_path": "../esphome-hassio",
+  "esphome_issues_path": "../esphome-issues",
+  "esphome_feature_requests_path": "../esphome-feature-requests"
+}

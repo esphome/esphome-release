@@ -1,0 +1,26 @@
+[MASTER]
+reports=no
+
+disable=
+  missing-docstring,
+  global-statement,
+  too-few-public-methods,
+  too-many-lines,
+  too-many-locals,
+  too-many-ancestors,
+  too-many-branches,
+  too-many-statements,
+  too-many-arguments,
+  too-many-return-statements,
+  too-many-instance-attributes,
+  too-many-public-methods,
+  duplicate-code,
+  import-outside-toplevel,
+  invalid-name,
+  line-too-long,
+  no-else-return,
+  subprocess-run-check,
+  no-self-use,
+  unnecessary-pass,
+  blacklisted-name,
+  cyclic-import,

@@ -1,126 +1,142 @@
-from collections import OrderedDict
+from collections import defaultdict
 from datetime import datetime
-from distutils.version import StrictVersion
+from typing import Dict, List, Tuple
+import functools
+from dataclasses import replace
 
-import click
+from github3.pulls import PullRequest
 
-from esphomerelease.util import EsphomedocsProject, EsphomelibProject, \
-    EsphomeyamlProject, gprint
+from .util import gprint, process_asynchronously
+from .project import EsphomeDocsProject, EsphomeProject, Project
+from .model import Version, BranchType
 
+
+# Extra headers that are inserted in the changelog if
+# one of these labels is applied
 LABEL_HEADERS = {
     'new-feature': 'New Features',
+    'new-integration': 'New Integrations',
     'breaking-change': 'Breaking Changes',
     'cherry-picked': 'Beta Fixes',
+    'notable-change': 'Notable Changes',
 }
 
 
-def format_link(text, href, markdown):
+def format_heading(title: str, markdown: bool, level: int = 2):
     if markdown:
-        return '[{}]({})'.format(text, href)
-    return '`{} <{}>`__'.format(text, href)
-
-
-def format_line(project, pr, msg, markdown):
-    user = pr.user
-    if user.login == 'OttoWinter':
-        format = '- {project}: {message} {pr_link}'
+        c = level * "#"
+        return f'{c} {title}\n'
     else:
-        format = '- {project}: {message} {pr_link} by {user_link}'
+        prefix = {
+            1: '=',
+            2: '-',
+            3: '*',
+        }[level]
+        return f'{title}\n{len(title) * prefix}\n'
 
+
+def format_line(project: Project, pr: PullRequest, markdown: bool) -> str:
+    username = pr.user.login
     if markdown:
-        pr_link = '[{}#{}]({})'.format(project.shortname, pr.number, pr.html_url)
-        user_link = '[@{}]({})'.format(user, user.html_url)
+        pr_link = f'[{project.shortname}#{pr.number}]({pr.html_url})'
+        user_link = f'[@{username}]({pr.user.html_url})'
     else:
-        pr_link = ':{}pr:`{}`'.format(project.shortname, pr.number)
-        user_link = ':ghuser:`{}`'.format(user)
-    line = format.format(project=project.shortname, message=msg,
-                         pr_link=pr_link, user_link=user_link)
+        pr_link = f':{project.shortname}pr:`{pr.number}`'
+        user_link = f':ghuser:`{username}`'
+
+    line = f'- {project.shortname}: {pr.title} {pr_link}'
+    if username != 'OttoWinter':
+        line += f' by {user_link}'
     return line
 
 
-def generate(release, *, markdown=False):
+def generate(*, base: BranchType, head: BranchType, head_version: Version,
+             markdown: bool = False, with_sections: bool = True):
     gprint("Generating changelog...")
-    label_groups = OrderedDict()
-    label_groups['new-feature'] = []
-    label_groups['breaking-change'] = []
-    if release.version.version[-1] == 0:
-        # Only add 'beta fix' for 0-release
-        label_groups['cherry-picked'] = []
 
-    changes = []
-    lines = []
+    # Here we store the lines to insert for each label
+    # Mapping from label to list of lines
+    label_groups: Dict[str, List[str]] = defaultdict(list)
 
-    list_ = []
-    for prj in (EsphomelibProject, EsphomeyamlProject, EsphomedocsProject):
-        list_ += [(prj, line) for line in release.log_lines(prj)]
-    with click.progressbar(list_, label="PRs") as bar:
-        for project, line in bar:
-            # Filter out git commits that are not merge commits
-            if line.pr is None:
-                continue
+    # Create a list of all log lines in all relevant projects
+    list_: List[Tuple[Project, int]] = []
 
-            pr = project.get_pr(line.pr)
+    for prj in (EsphomeProject, EsphomeDocsProject):
+        list_ += [(prj, pr_number) for pr_number in
+                  prj.prs_between(base, head)]
 
-            labels = [label['name'] for label in pr.labels]
+    lines: List[Tuple[Project, PullRequest, List[str]]] = []
 
-            # Filter out commits for which the PR has one of the ignored labels ('reverted')
-            if 'reverted' in labels:
-                continue
+    def job(project, pr_number):
+        pr: PullRequest = project.get_pr(pr_number)
 
-            lines.append((project, pr, line.message, labels))
+        labels: List[str] = [label['name'] for label in pr.labels]
 
+        # Filter out commits for which the PR has one of the ignored
+        # labels ('reverted')
+        if 'reverted' in labels:
+            return
+
+        if 'cherry-picked' in labels:
+            # FIXME the way we create milestones has been changes
+            cmp_version = replace(
+                head_version,
+                beta=0,
+                dev=False
+            )
+            if pr.milestone['title'] != str(cmp_version):
+                return
+
+        lines.append((project, pr, labels))
+
+    jobs = [functools.partial(job, *it) for it in list_]
+    process_asynchronously(jobs, "Load PRs")
+
+    # Sort log lines by when the PR was merged
     lines.sort(key=lambda x: x[1].merged_at)
 
-    for project, pr, msg, labels in lines:
-        parts = [format_line(project, pr, msg, markdown)]
+    # A list of strings containing all serialized changes
+    changes: List[str] = []
 
-        for label in labels:
-            if label in label_groups:
-                parts.append("({})".format(label))
+    # Now go through the lines struct and serialize them
+    for project, pr, labels in lines:
+        parts = [format_line(project, pr, markdown)]
+        parts += [f"({label})" for label in labels if label in LABEL_HEADERS]
 
         msg = ' '.join(parts)
         changes.append(msg)
 
         for label in labels:
-            if label in label_groups:
-                label_groups[label].append(msg)
+            label_groups[label].append(msg)
 
     outp = []
 
-    if release.is_patch_release:
-        if not markdown:
-            now = datetime.now()
-            title = f'Release {release.version} - {now.strftime("%B")} {now.day}'
-            outp.append(title)
-            outp.append('-' * len(title))
-            outp.append('')
-
-    else:
-        for label, prs in label_groups.items():
-            # if label == 'breaking change':
-            #     outp.append(WEBSITE_DIVIDER)
-
-            if not prs:
-                continue
-
-            title = LABEL_HEADERS[label]
+    if with_sections:
+        if head_version.patch != 0 and not head_version.beta:
+            # Add header for patch releases
             if not markdown:
-                outp.append(title)
-                outp.append('-' * len(title))
-            else:
-                outp.append(f'## {title}')
-
-            outp.append('')
-            outp.extend(prs)
-            outp.append('')
-
-        title = 'All changes'
-        if not markdown:
-            outp.append(title)
-            outp.append('-' * len(title))
+                now = datetime.now()
+                heading = format_heading(
+                    f'Release {head_version} - {now:%B} {now.day}', False
+                )
+                outp.append(heading)
         else:
-            outp.append(f'## {title}')
-        outp.append('')
+            # For non-patch releases, insert header groups
+            for label, title in LABEL_HEADERS.items():
+                prs = label_groups[label]
+                if not prs:
+                    continue
+
+                heading = format_heading(title, markdown)
+                outp.append(heading)
+
+                outp.extend(prs)
+                # add newline
+                outp.append('')
+
+            heading = format_heading('All changes', markdown)
+            outp.append(heading)
 
     outp.extend(changes)
+    outp.append('')
     return '\n'.join(outp)

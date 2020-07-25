@@ -1,22 +1,32 @@
-import os
 import shlex
 import subprocess
 import sys
 
 import click
 
-from esphomerelease.util import EsphomeReleaseError, EsphomeyamlProject, EsphomedocsProject
+from .config import CONFIG
 
+def execute_command(*args, **kwargs) -> bytes:
+    from .util import EsphomeReleaseError
 
-def execute_command(*args, **kwargs):
-    if 'cwd' in kwargs:
-        print("Running: {} (cwd={})".format(' '.join(shlex.quote(x) for x in args), kwargs['cwd']))
-    else:
-        print("Running: {}".format(' '.join(shlex.quote(x) for x in args)))
+    silent = kwargs.pop('silent', False)
+    full_cmd = ' '.join(shlex.quote(x) for x in args)
+    if not silent:
+        if 'cwd' in kwargs:
+            cwd = kwargs['cwd']
+            print(f"Running: {full_cmd} (cwd={cwd})")
+        else:
+            print(f"Running: {full_cmd}")
+
+        if CONFIG['step']:
+            while not click.confirm("Run command?"):
+                continue
+
     show = kwargs.pop('show', False)
     live = kwargs.pop('live', False)
     kwargs.setdefault('stdout', subprocess.PIPE)
     kwargs.setdefault('stderr', subprocess.PIPE)
+    fail_ok = kwargs.pop('fail_ok', False)
 
     if live:
         kwargs['stdout'] = subprocess.PIPE
@@ -35,52 +45,23 @@ def execute_command(*args, **kwargs):
             print(process.stdout.decode())
 
     if process.returncode != 0:
-        print("stderr: ")
+        if not silent or not fail_ok:
+            print("stderr: ")
         if process.stderr is None:
             raise EsphomeReleaseError
         click.secho(process.stderr.decode(), fg='red')
+
+        if not fail_ok:
+            print(f"Failed running command {full_cmd}")
+            print("Please try running it again")
+            if click.confirm(click.style("If it passes, you press y", fg='red')):
+                return process.stdout
+
         raise EsphomeReleaseError('Failed running command!')
 
     return process.stdout
 
 
-def execute_git(project, *args, **kwargs):
-    args = ['git', '-C', str(project.get_path()), *args]
+def execute_git(project, *args, **kwargs) -> bytes:
+    args = ['git', '-C', str(project.path), *args]
     return execute_command(*args, **kwargs)
-
-
-def get_esphomeyaml_version(branch):
-    stdout = execute_git(EsphomeyamlProject, 'show', '{}:esphomeyaml/const.py'.format(branch))
-
-    locals = {}
-    exec(stdout, {}, locals)
-    return locals['__version__']
-
-
-def get_log(project, from_, to_):
-    if project is EsphomedocsProject and to_ == 'dev':
-        to_ = 'next'
-    if project is EsphomedocsProject and to_ == 'master':
-        to_ = 'current'
-    if from_[0].isdigit():
-        from_ = 'v' + from_
-    args = ['log', '{}...{}'.format(from_, to_),
-            "--pretty=format:- %s (%ae)", '--reverse']
-    stdout = execute_git(project, *args)
-
-    output = stdout.decode('utf-8')
-    last = None
-
-    for line in output.split('\n'):
-        if line == last:
-            continue
-        last = line
-        yield line
-
-
-def fetch(path):
-    execute_git(path, 'fetch')
-
-
-def cherry_pick(path, sha):
-    execute_git(path, 'cherry-pick', sha)
