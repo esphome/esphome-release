@@ -2,7 +2,6 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
 import functools
-from dataclasses import replace
 
 from github3.pulls import PullRequest
 
@@ -50,7 +49,8 @@ def format_line(project: Project, pr: PullRequest, markdown: bool) -> str:
     return line
 
 
-def generate(*, base: BranchType, head: BranchType, head_version: Version,
+def generate(*, base: BranchType, base_version: Version,
+             head: BranchType, head_version: Version,
              markdown: bool = False, with_sections: bool = True):
     gprint("Generating changelog...")
 
@@ -78,14 +78,15 @@ def generate(*, base: BranchType, head: BranchType, head_version: Version,
             return
 
         if 'cherry-picked' in labels:
-            # FIXME the way we create milestones has been changes
-            cmp_version = replace(
-                head_version,
-                beta=0,
-                dev=False
-            )
-            if pr.milestone['title'] != str(cmp_version):
-                return
+            milestone = pr.milestone['title']
+            try:
+                pick_version = Version.parse(pr.milestone['title'])
+                if pick_version < base_version or pick_version > head_version:
+                    # Not included in this release
+                    return
+            except ValueError:
+                print(f"Could not parse milestone {milestone}")
+                labels.remove('cherry-picked')
 
         lines.append((project, pr, labels))
 
@@ -112,7 +113,7 @@ def generate(*, base: BranchType, head: BranchType, head_version: Version,
     outp = []
 
     if with_sections:
-        if head_version.patch != 0 and not head_version.beta:
+        if head_version is not None and head_version.patch != 0 and not head_version.beta:
             # Add header for patch releases
             if not markdown:
                 now = datetime.now()

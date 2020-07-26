@@ -3,7 +3,7 @@ import click
 
 from .model import Version, Branch, BranchType
 from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeHassioProject, EsphomeIssuesProject
-from .util import update_local_copies, gprint
+from .util import update_local_copies, gprint, copy_clipboard, open_vscode, random_quote, confirm
 from .exceptions import EsphomeReleaseError
 from . import changelog
 
@@ -35,16 +35,18 @@ def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
 def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     branch_name = _bump_branch_name(version)
     changelog_md = changelog.generate(
-        base=f'v{base}', head=branch_name, head_version=version,
+        base=f'v{base}', base_version=base,
+        head=branch_name, head_version=version,
         markdown=True, with_sections=False
     )
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
+        body = "**Remember to use merge commit, not squash**\n" + random_quote() + changelog_md
         with proj.workon(branch_name):
             proj.create_pr(
                 title=str(version),
                 target_branch=target_branch,
-                body=changelog_md
+                body=body
             )
 
 
@@ -64,8 +66,25 @@ def _mark_cherry_picked(cherry_picked):
 
 def _promt_base_version() -> Version:
     base_str = click.prompt("Please enter base (what release to compare with for changelog)",
-                            default=EsphomeProject.latest_release().tag_name[1:])
+                            default=str(EsphomeProject.latest_release()))
     return Version.parse(base_str)
+
+
+def _docs_insert_changelog(*, version: Version, base: Version):
+    branch_name = _bump_branch_name(version)
+    with EsphomeDocsProject.workon(branch_name):
+        changelog_rst = changelog.generate(
+            base=f'v{base}', base_version=base,
+            head=branch_name, head_version=version,
+            markdown=False, with_sections=version.beta == 1
+        )
+        copy_clipboard(changelog_rst)
+        changelog_version = version.replace(patch=0, beta=0, dev=False)
+        changelog_path = EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
+        gprint("Changelog has been copied to your clipboard. Please paste it in.")
+        open_vscode(str(changelog_path))
+        confirm("Pasted changelog?")
+        EsphomeDocsProject.commit(f'Update changelog for {version}')
 
 
 def cut_beta_release(version: Version):
@@ -96,6 +115,7 @@ def cut_beta_release(version: Version):
             cherry_picked.extend(
                 _strategy_cherry_pick(proj, version, base=Branch.BETA)
             )
+    _docs_insert_changelog(version=version, base=base)
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.BETA)
@@ -123,6 +143,7 @@ def cut_release(version: Version):
             cherry_picked.extend(
                 _strategy_cherry_pick(proj, version, base=Branch.STABLE)
             )
+    _docs_insert_changelog(version=version, base=base)
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
@@ -132,17 +153,18 @@ def cut_release(version: Version):
 
 def _publish_release(*, version: Version, base: Version, head_branch: BranchType, prerelease: bool):
     update_local_copies()
-    _confirm(f"Please make sure the {version} PR has been merged")
+    confirm(f"Please make sure the {version} PR has been merged")
     changelog_md = changelog.generate(
-        base=f'v{base}', head=head_branch, head_version=version,
+        base=f'v{base}', base_version=base,
+        head=head_branch, head_version=version,
         markdown=True, with_sections=False
     )
-    _confirm(f"Publish version {version}?")
+    confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
         proj.create_release(version, prerelease=prerelease, body=changelog_md)
 
     EsphomeHassioProject.bump_version(version)
-    EsphomeHassioProject.create_release(version, prerelease=prerelease, body=changelog_md)
+    EsphomeHassioProject.create_release(version, prerelease=prerelease)
 
 
 def publish_beta_release(version: Version):
@@ -167,10 +189,5 @@ def publish_release(version: Version):
     )
 
 
-def _confirm(text):
-    while not click.confirm(text):
-        pass
-
-
 def _confirm_correct():
-    _confirm(click.style("Please confirm everything is correct", fg='red'))
+    confirm(click.style("Please confirm everything is correct", fg='red'))

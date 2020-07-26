@@ -3,7 +3,8 @@ import subprocess
 import time
 import threading
 import queue
-from typing import TYPE_CHECKING
+import shlex
+import sys
 
 import click
 import requests
@@ -11,10 +12,6 @@ import requests
 from .config import CONFIG
 from .model import Version
 from .exceptions import EsphomeReleaseError
-
-
-if TYPE_CHECKING:
-    from .project import Project
 
 
 def copy_clipboard(text):
@@ -26,6 +23,10 @@ def copy_clipboard(text):
         print("---------- START COPY ----------")
         print(text)
         print("---------- STOP COPY ----------")
+
+
+def open_vscode(*paths):
+    subprocess.run(["code", *paths])
 
 
 def gprint(s, *args, fg='green'):
@@ -104,15 +105,6 @@ def process_asynchronously(jobs, heading: str = None, num_threads: int = os.cpu_
     return [result[i] for i, job in enumerate(jobs)]
 
 
-def confirm_replace(prj: 'Project'):
-    """Confirm a diff before committing."""
-    gprint("=============== DIFF START ===============")
-    prj.run_git('add', '.')
-    prj.run_git('diff', '--color', '--cached', show=True)
-    if not click.confirm(click.style("==== Please verify the diff is correct ====", fg='green')):
-        raise EsphomeReleaseError
-
-
 def update_local_copies():
     """Update local repos to be up to date with remotes."""
     from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
@@ -142,3 +134,85 @@ def checkout_dev():
     gprint("Checking out dev again...")
     EsphomeProject.checkout('dev')
     EsphomeDocsProject.checkout('next')
+
+
+def random_quote():
+    # Idea from @frenck here: https://github.com/home-assistant/core/pull/38065
+    try:
+        js = requests.get('http://quotes.stormconsultancy.co.uk/random.json').json()
+        quote = js['quote']
+        author = js['author']
+        return f'\n> _"{quote}"_\n\n~ {author}\n'
+    except Exception:  # pylint: disable=broad-except
+        return ''
+
+
+def confirm(text):
+    while not click.confirm(text):
+        pass
+
+
+def execute_command(*args, **kwargs) -> bytes:
+    """Execute an external program given by `args` and return the result stdout.
+
+    show: Show the stdout output
+    live: Directly print all command output to stdout
+    on_fail: Optional callback to call when returncode is non-zero
+    fail_ok: If the command is allowed to fail, else notifies the user
+    silent: Don't print anything about this command.
+    other kwargs passed to subprocess.run
+    """
+    silent = kwargs.pop('silent', False)
+    full_cmd = ' '.join(shlex.quote(x) for x in args)
+    if not silent:
+        if 'cwd' in kwargs:
+            cwd = kwargs['cwd']
+            print(f"Running: {full_cmd} (cwd={cwd})")
+        else:
+            print(f"Running: {full_cmd}")
+
+        if CONFIG['step']:
+            while not click.confirm("Run command?"):
+                continue
+
+    show = kwargs.pop('show', False)
+    live = kwargs.pop('live', False)
+    on_fail = kwargs.pop('on_fail', None)
+    kwargs.setdefault('stdout', subprocess.PIPE)
+    kwargs.setdefault('stderr', subprocess.PIPE)
+    fail_ok = kwargs.pop('fail_ok', False)
+
+    if live:
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.STDOUT
+        process = subprocess.Popen(args, **kwargs)
+        while True:
+            out = process.stdout.readline().decode()
+            sys.stdout.write(out)
+            sys.stdout.flush()
+            if process.poll() is not None:
+                break
+    else:
+        process = subprocess.run(args, **kwargs)
+
+        if show:
+            print(process.stdout.decode())
+
+    if process.returncode != 0:
+        if not silent or not fail_ok:
+            print("stderr: ")
+        if process.stderr is None:
+            raise EsphomeReleaseError
+        click.secho(process.stderr.decode(), fg='red')
+
+        if not fail_ok:
+            if on_fail is not None:
+                return on_fail(process.stdout)
+            print(f"Failed running command {full_cmd}")
+            print("Please try running it again")
+            if click.confirm(click.style("If it passes, you press y", fg='red')):
+                return process.stdout
+
+        raise EsphomeReleaseError('Failed running command!')
+
+    return process.stdout

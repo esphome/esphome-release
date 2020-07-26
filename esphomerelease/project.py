@@ -3,29 +3,30 @@ import time
 import re
 from pathlib import Path
 import contextlib
+import os
+import sys
 
 from github3.repos.repo import Repository
 from github3.pulls import PullRequest
 from github3.issues.issue import Issue
 from github3.issues.milestone import Milestone
-from github3.repos.release import Release
 import click
+import pexpect
 
+from . import util
 from .model import Version, Branch, BranchType
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
-from .util import gprint
-
-
-LOG_PR_PATTERN = re.compile(r'^.*\(#(\d+)\)$')
+from .util import gprint, confirm, execute_command
 
 
 class Project:
-    def __init__(self, *, path: str, repo_name: Optional[str] = None,
+    def __init__(self, *, path: str, shortname: str, repo_name: Optional[str] = None,
                  stable_branch: Optional[str] = None, beta_branch: Optional[str] = None,
                  dev_branch: Optional[str] = None):
         # The name on the remote
         self._repo_name: str = repo_name
+        self.shortname: str = shortname
         self._repo: Optional[Repository] = None
 
         # A cache or
@@ -126,9 +127,17 @@ class Project:
         for issue in to_pick:
             issue.add_labels('cherry-picked')
 
-    def latest_release(self) -> Release:
+    def latest_release(self, *, include_prereleases: bool = True) -> Version:
         """Get the latest release"""
-        return self.repo.latest_release()
+        if not include_prereleases:
+            return Version.parse(self.repo.latest_release().tag_name[1:])
+        found_versions = []
+        for release in self.repo.releases():
+            try:
+                found_versions.append(Version.parse(release.tag_name[1:]))
+            except ValueError:
+                pass
+        return max(found_versions)
 
     def create_pr(self, *, title: str, target_branch: BranchType,
                   body: Optional[str] = None) -> PullRequest:
@@ -170,14 +179,10 @@ class Project:
 
     def run_git(self, *args, **kwargs):
         """Run a git command given by args."""
-        from esphomerelease.git import execute_git
-
-        return execute_git(self, *args, **kwargs)
+        return self.run_command('git', *args, **kwargs)
 
     def run_command(self, *args, **kwargs):
         """Run a command in the repository working directory."""
-        from esphomerelease.git import execute_command
-
         return execute_command(*args, cwd=str(self.path), **kwargs)
 
     def checkout(self, branch: BranchType):
@@ -223,6 +228,23 @@ class Project:
         else:
             self.run_git('pull')
 
+    def _spawn_subshell(self, *, run: str, print_lines: List[str]):
+        if not click.confirm('Spawn a shell to fix the problem?', default=True):
+            return
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(self.path))
+            out = pexpect.run(run)
+            sys.stdout.write(out.decode())
+            for line in print_lines:
+                gprint(line)
+            os.system(os.getenv('SHELL', '/bin/bash'))
+        except Exception as exc:  # pylint: disable=broad-except
+            print(exc)
+        finally:
+            os.chdir(old_cwd)
+        confirm("Confirm the problem has been fixed")
+
     def merge(self, branch: BranchType, strategy_option: Optional[str] = None):
         """Merge the branch `branch` into the current branch with an optional explicit strategy."""
         branch = self.lookup_branch(branch)
@@ -230,16 +252,36 @@ class Project:
         if strategy_option is not None:
             command += ['-X', strategy_option]
         command.append(branch)
-        self.run_git(*command)
 
-    def commit(self, message: str, ignore_empty: bool = False):
+        def on_fail(stdout):
+            gprint("===== MERGE FAILED ====")
+            self._spawn_subshell(run='git status', print_lines=[
+                f"{self._repo_name} Merging {branch} into {self.branch} failed!",
+                "To fix, run in the shell that will be spawned:",
+                " - look at `git status` output",
+                " - resolve merge conflicts",
+                " - git add .",
+                " - git commit",
+                " - Then exit the shell with Ctrl+D",
+            ])
+            return stdout
+
+        self.run_git(*command, on_fail=on_fail)
+
+    # pylint: disable=redefined-outer-name
+    def commit(self, message: str, ignore_empty: bool = False, confirm: bool = False):
         """Create a commit with the given message.
 
         ignore_empty: If the diff is empty, don't create a commit instead of failing.
         """
         if ignore_empty and not self.has_local_changes:
             return
-        self.run_git('commit', '-am', message)
+        self.run_git('add', '.')
+        if confirm:
+            gprint("=============== DIFF START ===============")
+            self.run_git('diff', '--color', '--cached', show=True)
+            util.confirm(click.style("==== Please verify the diff is correct ====", fg='green'))
+        self.run_git('commit', '-m', message)
 
     def push(self):
         """Push the current ref to the given remote."""
@@ -272,8 +314,8 @@ class Project:
         branch = self.lookup_branch(branch)
 
         if self.does_branch_exist(branch):
-            if click.confirm(f"Branch {branch} already exists. Delete first?"):
-                self.run_git('git', 'branch', '-D', branch)
+            if click.confirm(f"Branch {branch} already exists. Delete first?", default=True):
+                self.run_git('branch', '-D', branch)
             else:
                 return
         self.run_git('checkout', '-b', branch)
@@ -285,26 +327,39 @@ class Project:
 
     def cherry_pick(self, sha: str):
         """Cherry-pick a commit by SHA."""
-        self.run_git('cherry-pick', sha)
+
+        def on_fail(stdout):
+            gprint("===== CHERRY PICK FAILED ====")
+            self._spawn_subshell(run='git status', print_lines=[
+                f"{self._repo_name} Cherry-picking {sha} into {self.branch} failed!",
+                "To fix, run in the shell that will be spawned:",
+                " - look at `git status` output",
+                " - resolve merge conflicts",
+                " - git add .",
+                " - git commit",
+                " - Then exit the shell with Ctrl+D",
+            ])
+            return stdout
+
+        self.run_git('cherry-pick', sha, on_fail=on_fail)
 
     def bump_version(self, version: Version):
         self.run_command('script/bump-version.py', str(version))
         self.commit(f'Bump version to v{version}')
-        # FIXME generate changelog for docs
 
     def prs_between(self, base: BranchType, head: BranchType) -> List[int]:
         base = self.lookup_branch(base)
         head = self.lookup_branch(head)
 
-        stdout = self.run_git('log', f'{base}..{head}', '--pretty-format:%s').decode()
+        stdout = self.run_git('log', f'{base}..{head}', "--pretty=format:%s").decode()
         last = None
 
         prs = []
-        for line in stdout.splitlines():
+        for line in stdout.splitlines(False):
             if line == last:
                 continue
             last = line
-            match = LOG_PR_PATTERN.match(line)
+            match = re.match(r'^.+\(\#(\d+)\)$', line)
             if match is not None:
                 prs.append(int(match.group(1)))
 
@@ -312,21 +367,22 @@ class Project:
 
 
 EsphomeProject = Project(
-    repo_name="esphome", path=CONFIG["esphome_path"],
+    repo_name="esphome", path=CONFIG["esphome_path"], shortname='esphome',
     stable_branch='master', beta_branch='beta', dev_branch='dev'
 )
 EsphomeDocsProject = Project(
-    repo_name="esphome-docs", path=CONFIG["esphome_docs_path"],
+    repo_name="esphome-docs", path=CONFIG["esphome_docs_path"], shortname='docs',
     stable_branch='current', beta_branch='beta', dev_branch='next'
 )
 EsphomeHassioProject = Project(
-    repo_name="hassio", path=CONFIG["esphome_hassio_path"]
+    repo_name="hassio", path=CONFIG["esphome_hassio_path"], shortname='hassio'
 )
 EsphomeIssuesProject = Project(
-    repo_name="issues", path=CONFIG["esphome_issues_path"]
+    repo_name="issues", path=CONFIG["esphome_issues_path"], shortname='issues'
 )
 EsphomeFeatureRequestsProject = Project(
-    repo_name="feature-requests", path=CONFIG["esphome_feature_requests_path"]
+    repo_name="feature-requests", path=CONFIG["esphome_feature_requests_path"],
+    shortname='feature-requests'
 )
 
 ALL_PROJECTS: List[Project] = [

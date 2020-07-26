@@ -7,7 +7,7 @@ from github3.repos import Repository
 from . import cutting, changelog
 from .github import get_session
 from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
-from .model import Version
+from .model import Version, Branch
 from .config import CONFIG
 from .util import gprint, copy_clipboard
 
@@ -60,18 +60,36 @@ def reset():
 
 @cli.command(help="Generate release notes.")
 @click.option('--markdown', is_flag=True, default=False, help="Use markdown instead of RST.")
-@click.option('--with-sections/--without-sections', help="Add sections", default=True)
-@click.argument('version')
-def release_notes(version, markdown, with_sections):
-    version = Version.parse(version)
-    base_str = click.prompt("Please enter base",
-                            default=EsphomeProject.latest_release().tag_name[1:])
-    base = Version.parse(base_str)
+@click.option('--with-sections/--without-sections', help="Add sections", default=False)
+def release_notes(markdown, with_sections):
+    base_str = click.prompt("Please enter base version",
+                            default=str(EsphomeProject.latest_release()))
+    base_version = Version.parse(base_str)
+    base_ref = f'v{base_str}'
+
+    head_str = click.prompt("Please enter head ref (dev/beta/stable)", default='dev')
+    default_head_version = None
+    if head_str == 'dev':
+        head_ref = Branch.DEV
+        default_head_version = base_version.next_dev_version
+    elif head_str == 'beta':
+        head_ref = Branch.BETA
+        default_head_version = base_version.next_beta_version
+    elif head_str in ['stable', 'master']:
+        head_ref = Branch.STABLE
+        default_head_version = base_version.next_patch_version
+    else:
+        head_ref = f'v{head_str}'
+        default_head_version = Version.parse(head_str)
+
+    head_version_str = click.prompt("Please enter head version", default=str(default_head_version))
+    head_version = Version.parse(head_version_str)
 
     text = changelog.generate(
-        base=f'v{base}', head=f'v{version}', head_version=version,
+        base=base_ref, base_version=base_version, head=head_ref, head_version=head_version,
         markdown=markdown, with_sections=with_sections
     )
+    print(text)
 
     copy_clipboard(text)
     gprint("Changelog has been copied to your clipboard!")
