@@ -122,6 +122,11 @@ def cut_beta_release(version: Version):
     _update_milestones(version=version, next_version=version.next_beta_version)
     _mark_cherry_picked(cherry_picked)
 
+    if version.beta == 1:
+        for proj in [EsphomeProject, EsphomeDocsProject]:
+            with proj.workon(Branch.DEV):
+                proj.push()
+
 
 def cut_release(version: Version):
     if version.beta or version.dev:

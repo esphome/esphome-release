@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import github3.session
 from github3 import GitHub
 
 from .config import CONFIG
@@ -16,7 +17,9 @@ def get_session() -> GitHub:
 
     token = CONFIG['github_token']
 
-    gh = GitHub(token=token)
+    # Increase read timeout for creating PRs with long bodies.
+    sess = github3.session.GitHubSession(default_read_timeout=30)
+    gh = GitHub(token=token, session=sess)
     rate_limit = gh.rate_limit()['rate']
     limit = rate_limit['limit']
     remaining = rate_limit['remaining']

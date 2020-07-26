@@ -142,7 +142,7 @@ class Project:
     def create_pr(self, *, title: str, target_branch: BranchType,
                   body: Optional[str] = None) -> PullRequest:
         target_branch = self.lookup_branch(target_branch)
-        self.push()
+        self.push(set_upstream=True)
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
         pr = self.repo.create_pull(title, target_branch, self.branch, body=body)
@@ -283,9 +283,12 @@ class Project:
             util.confirm(click.style("==== Please verify the diff is correct ====", fg='green'))
         self.run_git('commit', '-m', message)
 
-    def push(self):
+    def push(self, set_upstream: bool = False):
         """Push the current ref to the given remote."""
-        self.run_git('push')
+        if set_upstream:
+            self.run_git('push', '--set-upstream', 'origin', self.branch)
+        else:
+            self.run_git('push')
 
     def checkout_pull(self, branch: BranchType):
         """Checkout a branch, then pull on that branch."""
