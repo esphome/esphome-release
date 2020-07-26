@@ -9,7 +9,7 @@ from .github import get_session
 from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
 from .model import Version, Branch
 from .config import CONFIG
-from .util import gprint, copy_clipboard
+from .util import gprint, copy_clipboard, confirm
 
 
 @click.group()
@@ -95,6 +95,21 @@ def release_notes(markdown, with_sections, include_author):
 
     copy_clipboard(text)
     gprint("Changelog has been copied to your clipboard!")
+
+
+@cli.command(help="Cherry-pick from milestone")
+@click.argument('milestone', help="The milestone to pick from")
+def milestone_cherry_pick(milestone):
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone_obj = proj.get_milestone_by_title(milestone)
+        if milestone_obj is None:
+            confirm(f"Couldn't find milestone {milestone} for project {proj.name}")
+            continue
+        if not click.confirm(f"Cherry-pick commits for {proj.name} on current branch?", default=True):
+            continue
+        ret = proj.cherry_pick_from_milestone(milestone_obj)
+        if click.confirm("Label picked commits as cherry-picked?", default=True):
+            proj.mark_pulls_cherry_picked(ret)
 
 
 def count_file(fname):

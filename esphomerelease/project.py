@@ -50,6 +50,10 @@ class Project:
         if dev_branch is not None:
             self._branch_lookup[Branch.DEV] = dev_branch
 
+    @property
+    def name(self) -> str:
+        return self._repo_name
+
     def lookup_branch(self, branch: Union[str, Branch]) -> str:
         if isinstance(branch, Branch):
             return self._branch_lookup[branch]
