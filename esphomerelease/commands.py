@@ -61,7 +61,9 @@ def reset():
 @cli.command(help="Generate release notes.")
 @click.option('--markdown', is_flag=True, default=False, help="Use markdown instead of RST.")
 @click.option('--with-sections/--without-sections', help="Add sections", default=False)
-def release_notes(markdown, with_sections):
+@click.option('--include-author/--dont-include-author', is_flag=True,
+              help="Include author mentions", default=True)
+def release_notes(markdown, with_sections, include_author):
     base_str = click.prompt("Please enter base version",
                             default=str(EsphomeProject.latest_release()))
     base_version = Version.parse(base_str)
@@ -87,7 +89,7 @@ def release_notes(markdown, with_sections):
 
     text = changelog.generate(
         base=base_ref, base_version=base_version, head=head_ref, head_version=head_version,
-        markdown=markdown, with_sections=with_sections
+        markdown=markdown, with_sections=with_sections, include_author=include_author
     )
     print(text)
 

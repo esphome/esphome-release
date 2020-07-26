@@ -37,7 +37,9 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     changelog_md = changelog.generate(
         base=f'v{base}', base_version=base,
         head=branch_name, head_version=version,
-        markdown=True, with_sections=False
+        markdown=True, with_sections=False,
+        # Don't include author to not spam everybody for release PRs
+        include_author=False
     )
 
     for proj in [EsphomeProject, EsphomeDocsProject]:

@@ -34,7 +34,7 @@ def format_heading(title: str, markdown: bool, level: int = 2):
         return f'{title}\n{len(title) * prefix}\n'
 
 
-def format_line(project: Project, pr: PullRequest, markdown: bool) -> str:
+def format_line(*, project: Project, pr: PullRequest, markdown: bool, include_author: bool) -> str:
     username = pr.user.login
     if markdown:
         pr_link = f'[{project.shortname}#{pr.number}]({pr.html_url})'
@@ -44,14 +44,15 @@ def format_line(project: Project, pr: PullRequest, markdown: bool) -> str:
         user_link = f':ghuser:`{username}`'
 
     line = f'- {project.shortname}: {pr.title} {pr_link}'
-    if username != 'OttoWinter':
+    if include_author and username != 'OttoWinter':
         line += f' by {user_link}'
     return line
 
 
 def generate(*, base: BranchType, base_version: Version,
              head: BranchType, head_version: Version,
-             markdown: bool = False, with_sections: bool = True):
+             markdown: bool = False, with_sections: bool = True,
+             include_author: bool = True):
     gprint("Generating changelog...")
 
     # Here we store the lines to insert for each label
@@ -101,7 +102,10 @@ def generate(*, base: BranchType, base_version: Version,
 
     # Now go through the lines struct and serialize them
     for project, pr, labels in lines:
-        parts = [format_line(project, pr, markdown)]
+        parts = [format_line(
+            project=project, pr=pr, markdown=markdown,
+            include_author=include_author
+        )]
         parts += [f"({label})" for label in labels if label in LABEL_HEADERS]
 
         msg = ' '.join(parts)
