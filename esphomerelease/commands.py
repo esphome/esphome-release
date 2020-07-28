@@ -98,7 +98,7 @@ def release_notes(markdown, with_sections, include_author):
 
 
 @cli.command(help="Cherry-pick from milestone")
-@click.argument('milestone', help="The milestone to pick from")
+@click.argument('milestone')
 def milestone_cherry_pick(milestone):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         milestone_obj = proj.get_milestone_by_title(milestone)

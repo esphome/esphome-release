@@ -154,7 +154,7 @@ class Project:
         click.launch(pr.html_url)
         return pr
 
-    def create_release(self, name: str, body: Optional[str] = None, prerelease: bool = False,
+    def create_release(self, version: Version, body: Optional[str] = None, prerelease: bool = False,
                        draft: bool = False):
         """Create a release from the current branch on the remote.
 
@@ -167,15 +167,14 @@ class Project:
         self.push()
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
-        rel = self.repo.create_release('v{}'.format(name), target_commitish=self.branch, name=name,
+        rel = self.repo.create_release(f'v{version}', target_commitish=self.branch, name=f'{version}',
                                        body=body, prerelease=prerelease, draft=draft)
 
         if draft:
             url = rel.html_url.replace('/tag/', '/edit/')
             click.launch(url)
             log = click.style("Please go to {} and publish the draft.".format(url), fg='green')
-            if not click.confirm(log):
-                raise EsphomeReleaseError
+            confirm(log)
         else:
             time.sleep(1.0)
 

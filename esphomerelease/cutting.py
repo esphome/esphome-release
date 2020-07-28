@@ -160,7 +160,7 @@ def cut_release(version: Version):
 
 def _publish_release(*, version: Version, base: Version, head_branch: BranchType, prerelease: bool):
     update_local_copies()
-    confirm(f"Please make sure the {version} PR has been merged")
+    confirm(f"Please make sure the {version} PRs have been merged")
     changelog_md = changelog.generate(
         base=f'v{base}', base_version=base,
         head=head_branch, head_version=version,
@@ -168,7 +168,8 @@ def _publish_release(*, version: Version, base: Version, head_branch: BranchType
     )
     confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
-        proj.create_release(version, prerelease=prerelease, body=changelog_md)
+        with proj.workon(head_branch):
+            proj.create_release(version, prerelease=prerelease, body=changelog_md)
 
     EsphomeHassioProject.bump_version(version)
     EsphomeHassioProject.create_release(version, prerelease=prerelease)
