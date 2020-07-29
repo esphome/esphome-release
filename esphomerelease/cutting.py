@@ -160,7 +160,8 @@ def cut_release(version: Version):
 
 def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
     prs = proj.get_pr_by_title(
-        str(version), head=_bump_branch_name(version),
+        title=str(version),
+        head=_bump_branch_name(version),
         base=head_branch
     )
     release_pr = None
@@ -180,7 +181,8 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
         release_pr = None if num == len(prs) else prs[num]
 
     if release_pr is not None and release_pr.state == 'open':
-        if click.confirm(f"Merge {proj.shortname}#{release_pr.number}?"):
+        if click.confirm(f"Merge {proj.shortname}#{release_pr.number} \"{release_pr.title}\" "
+                         f"by @{release_pr.user.login}?"):
             success = release_pr.merge(merge_method='merge')
             if not success:
                 confirm("Merging failed, please check and confirm when ready")
@@ -188,10 +190,9 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
 
 def _publish_release(*, version: Version, base: Version, head_branch: BranchType, prerelease: bool):
     update_local_copies()
-    confirm(f"Please make sure the {version} PRs have been merged")
     changelog_md = changelog.generate(
         base=f'v{base}', base_version=base,
-        head=head_branch, head_version=version,
+        head=_bump_branch_name(version), head_version=version,
         markdown=True, with_sections=False
     )
     confirm(f"Publish version {version}?")
