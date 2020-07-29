@@ -75,6 +75,20 @@ class Project:
             self.pr_cache[pr] = self.repo.pull_request(pr)
         return self.pr_cache[pr]
 
+    def get_pr_by_title(self, *, title: str, head: Optional[BranchType] = None,
+                        base: Optional[BranchType] = None) -> List[PullRequest]:
+        if head is not None:
+            head = self.lookup_branch(head)
+        if base is not None:
+            base = self.lookup_branch(base)
+
+        res = []
+        for pr in self.repo.pull_requests(head=head, base=base):
+            self.pr_cache[pr.number] = pr
+            if pr.title == title:
+                res.append(pr)
+        return res
+
     def get_milestone_by_title(self, title: str) -> Optional[Milestone]:
         """Get a milestone by title."""
         seen = []
@@ -167,7 +181,8 @@ class Project:
         self.push()
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
-        rel = self.repo.create_release(f'v{version}', target_commitish=self.branch, name=f'{version}',
+        tag = f'v{version}'
+        rel = self.repo.create_release(tag, target_commitish=self.branch, name=f'{version}',
                                        body=body, prerelease=prerelease, draft=draft)
 
         if draft:
@@ -177,6 +192,8 @@ class Project:
             confirm(log)
         else:
             time.sleep(1.0)
+            gprint(f"Created Release {tag} from {self.branch}")
+            click.launch(rel.html_url)
 
         self.pull()
 

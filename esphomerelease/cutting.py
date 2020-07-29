@@ -2,7 +2,7 @@
 import click
 
 from .model import Version, Branch, BranchType
-from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeHassioProject, EsphomeIssuesProject
+from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject
 from .util import update_local_copies, gprint, copy_clipboard, open_vscode, random_quote, confirm
 from .exceptions import EsphomeReleaseError
 from . import changelog
@@ -43,7 +43,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     )
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
-        body = "**Remember to use merge commit, not squash**\n" + random_quote() + changelog_md
+        body = "**Do not merge, release script will automatically merge**\n" + random_quote() + changelog_md
         with proj.workon(branch_name):
             proj.create_pr(
                 title=str(version),
@@ -158,6 +158,34 @@ def cut_release(version: Version):
     _mark_cherry_picked(cherry_picked)
 
 
+def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
+    prs = proj.get_pr_by_title(
+        str(version), head=_bump_branch_name(version),
+        base=head_branch
+    )
+    release_pr = None
+    if not prs:
+        confirm(f"No release PRs found for {proj.shortname}, please verify it has been merged.")
+    elif len(prs) == 1:
+        release_pr = prs[0]
+    else:
+        gprint("Found multiple release PRs. Please select the matchin one")
+        for i, pr in enumerate(prs, start=1):
+            gprint(f" [{i}] #{pr.number} by @{pr.user.login} ({pr.html_url})")
+        gprint(f" [{len(prs)+1}] Auto-merge none")
+        num = int(click.prompt(
+            f"Please select release PR for {proj.shortname}",
+            type=click.Choice([i+1 for i in range(len(prs))])
+        )) - 1
+        release_pr = None if num == len(prs) else prs[num]
+
+    if release_pr is not None and release_pr.state == 'open':
+        if click.confirm(f"Merge {proj.shortname}#{release_pr.number}?"):
+            success = release_pr.merge(merge_method='merge')
+            if not success:
+                confirm("Merging failed, please check and confirm when ready")
+
+
 def _publish_release(*, version: Version, base: Version, head_branch: BranchType, prerelease: bool):
     update_local_copies()
     confirm(f"Please make sure the {version} PRs have been merged")
@@ -168,11 +196,10 @@ def _publish_release(*, version: Version, base: Version, head_branch: BranchType
     )
     confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
+        _merge_release_pr(proj=proj, version=version, head_branch=head_branch)
         with proj.workon(head_branch):
+            proj.pull()
             proj.create_release(version, prerelease=prerelease, body=changelog_md)
-
-    EsphomeHassioProject.bump_version(version)
-    EsphomeHassioProject.create_release(version, prerelease=prerelease)
 
 
 def publish_beta_release(version: Version):
