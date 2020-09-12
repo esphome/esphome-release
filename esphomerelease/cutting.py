@@ -80,10 +80,18 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             head=branch_name, head_version=version,
             markdown=False, with_sections=version.beta == 1
         )
-        copy_clipboard(changelog_rst)
+
+        from sys import platform
+        if platform == 'darwin':
+            copy_clipboard(changelog_rst)
+            gprint("Changelog has been copied to your clipboard. Please paste it in.")
+        else:
+            # Alternative where pbcopy does not work
+            gprint("Start Changelog:")
+            gprint(changelog_rst)
+            gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
-        gprint("Changelog has been copied to your clipboard. Please paste it in.")
         open_vscode(str(changelog_path))
         confirm("Pasted changelog?")
         EsphomeDocsProject.commit(f'Update changelog for {version}')
