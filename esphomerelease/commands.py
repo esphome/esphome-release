@@ -10,6 +10,7 @@ from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
 from .model import Version, Branch
 from .config import CONFIG
 from .util import gprint, copy_clipboard, confirm
+from .docs import gen_supporters
 
 
 @click.group()
@@ -176,3 +177,8 @@ def labels():
                 continue
             print(f"Create label '{label}' in {repo.name}")
             repo.create_label(label, 'ededed')
+
+
+@cli.command(help="Generate Supporters.")
+def supporters():
+    gen_supporters()

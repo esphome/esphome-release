@@ -6,6 +6,7 @@ from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeIssuesP
 from .util import update_local_copies, gprint, copy_clipboard, open_vscode, random_quote, confirm
 from .exceptions import EsphomeReleaseError
 from . import changelog
+from . import docs
 
 
 def _bump_branch_name(version: Version) -> str:
@@ -88,13 +89,21 @@ def _docs_insert_changelog(*, version: Version, base: Version):
         else:
             # Alternative where pbcopy does not work
             gprint("Start Changelog:")
-            gprint(changelog_rst)
+            print(changelog_rst)
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
         open_vscode(str(changelog_path))
         confirm("Pasted changelog?")
         EsphomeDocsProject.commit(f'Update changelog for {version}')
+
+
+def _docs_update_supporters(*, version: Version):
+    branch_name = _bump_branch_name(version)
+    gprint("Updating supporters")
+    with EsphomeDocsProject.workon(branch_name):
+        docs.gen_supporters()
+        EsphomeDocsProject.commit(f'Update supporters for {version}')
 
 
 def cut_beta_release(version: Version):
@@ -126,6 +135,7 @@ def cut_beta_release(version: Version):
                 _strategy_cherry_pick(proj, version, base=Branch.BETA)
             )
     _docs_insert_changelog(version=version, base=base)
+    _docs_update_supporters(version=version)
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.BETA)
@@ -159,6 +169,7 @@ def cut_release(version: Version):
                 _strategy_cherry_pick(proj, version, base=Branch.STABLE)
             )
     _docs_insert_changelog(version=version, base=base)
+    _docs_update_supporters(version=version)
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
