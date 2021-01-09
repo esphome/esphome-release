@@ -82,7 +82,7 @@ def generate(*, base: BranchType, base_version: Version,
             milestone = pr.milestone['title']
             try:
                 pick_version = Version.parse(pr.milestone['title'])
-                if pick_version < base_version or pick_version > head_version:
+                if pick_version <= base_version or pick_version > head_version:
                     # Not included in this release
                     return
             except ValueError:
