@@ -89,24 +89,24 @@ For example some releases for 1.15 could look like this:
 
 ```bash
 $ esphomerelease cut-release 1.15.0b1
-# Go to github, merge the PRs (links are printed to console)
+# Check the PRs (auto opened in browser)
 $ esphomerelease publish-release 1.15.0b1
 
 # To create release 1.15.0b2:
 # Add PRs to the `1.15.0b2` milestone that was automatically created.
 # Then run
 $ esphomerelease cut-release 1.15.0b2
-# Merge release PR
+# Check release PRs
 $ esphomerelease publish-release 1.15.0b2
 
 # Now we want to publish 1.15.0
 $ esphomerelease cut-release 1.15.0
-# Merge release PR
+# Check release PRs
 $ esphomerelease publish-release 1.15.0
 
 # Now create a patch release 1.15.1
 # Once again add PRs to the milestone 1.15.1, then perform these steps:
 $ esphomerelease cut-release 1.15.1
-# Merge release PR
+# Check release PRs
 $ esphomerelease publish-release 1.15.1
 ```
