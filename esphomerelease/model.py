@@ -5,9 +5,9 @@ from typing import Union
 
 
 class Branch(enum.Enum):
-    STABLE = 'stable'
-    BETA = 'beta'
-    DEV = 'dev'
+    STABLE = "stable"
+    BETA = "beta"
+    DEV = "dev"
 
 
 BranchType = Union[str, Branch]
@@ -22,20 +22,20 @@ class Version:
     dev: bool = False
 
     def __str__(self):
-        return f'{self.major}.{self.minor}.{self.full_patch}'
+        return f"{self.major}.{self.minor}.{self.full_patch}"
 
     @property
     def full_patch(self):
-        res = f'{self.patch}'
+        res = f"{self.patch}"
         if self.beta > 0:
-            res += f'b{self.beta}'
+            res += f"b{self.beta}"
         if self.dev:
-            res += '-dev'
+            res += "-dev"
         return res
 
     @classmethod
     def parse(cls, value):
-        match = re.match(r'(\d+).(\d+).(\d+)(b\d+)?(-dev)?', value)
+        match = re.match(r"(\d+).(\d+).(\d+)(b\d+)?(-dev)?", value)
         if match is None:
             raise ValueError(f"Could not parse version {value}")
         major = int(match[1])
@@ -49,19 +49,16 @@ class Version:
         dev = bool(match[5])
         if beta and dev:
             raise ValueError("Can't be both a beta and dev version")
-        return Version(
-            major=major, minor=minor, patch=patch,
-            beta=beta, dev=dev
-        )
+        return Version(major=major, minor=minor, patch=patch, beta=beta, dev=dev)
 
-    def replace(self, **kwargs) -> 'Version':
+    def replace(self, **kwargs) -> "Version":
         """Replace some values of this version, does not change self."""
         return replace(self, **kwargs)
 
     @property
     def next_dev_version(self):
         return self.replace(
-            minor=self.minor+1,
+            minor=self.minor + 1,
             patch=0,
             beta=0,
             dev=True,
@@ -69,29 +66,25 @@ class Version:
 
     @property
     def next_beta_version(self):
-        return self.replace(beta=self.beta+1)
+        return self.replace(beta=self.beta + 1)
 
     @property
     def previous_beta_version(self):
         if self.beta == 0:
             raise ValueError(f"No previous beta version for {self}")
-        return self.replace(beta=self.beta-1)
+        return self.replace(beta=self.beta - 1)
 
     @property
     def next_patch_version(self):
-        return self.replace(
-            patch=self.patch+1,
-            beta=0,
-            dev=False
-        )
+        return self.replace(patch=self.patch + 1, beta=0, dev=False)
 
     @property
     def previous_patch_version(self):
         if self.patch == 0:
             raise ValueError(f"No previous patch version for {self}")
-        return self.replace(path=self.patch-1)
+        return self.replace(path=self.patch - 1)
 
-    def __lt__(self, other: 'Version') -> bool:
+    def __lt__(self, other: "Version") -> bool:
         # 1.14.5 < 2.0.0
         if self.major != other.major:
             return self.major < other.major

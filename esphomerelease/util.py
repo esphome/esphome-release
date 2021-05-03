@@ -19,7 +19,7 @@ def copy_clipboard(text):
 
     Used for inserting changelog to clipboard.
     """
-    if subprocess.run('pbcopy', input=text.encode()).returncode != 0:
+    if subprocess.run("pbcopy", input=text.encode()).returncode != 0:
         print("---------- START COPY ----------")
         print(text)
         print("---------- STOP COPY ----------")
@@ -29,7 +29,7 @@ def open_vscode(*paths):
     subprocess.run(["code", *paths])
 
 
-def gprint(s, *args, fg='green'):
+def gprint(s, *args, fg="green"):
     """Print with green text."""
     click.secho(s.format(*args), fg=fg)
 
@@ -55,23 +55,27 @@ def purge_cloudflare_cache():
     Used after netlify release build finishes so that users
     see new release immediately and don't have to wait for the cache to clear
     """
-    if 'cloudflare_email' not in CONFIG:
+    if "cloudflare_email" not in CONFIG:
         gprint("Skipping purging cloudflare cache")
         return
 
     gprint("Purging cloudflare cache!")
     headers = {
-        'X-Auth-Email': CONFIG['cloudflare_email'],
-        'X-Auth-Key': CONFIG['cloudflare_auth_key'],
-        'Content-Type': 'application/json',
+        "X-Auth-Email": CONFIG["cloudflare_email"],
+        "X-Auth-Key": CONFIG["cloudflare_auth_key"],
+        "Content-Type": "application/json",
     }
-    zone = CONFIG['cloudflare_zone']
+    zone = CONFIG["cloudflare_zone"]
     requests.post(
-        f'https://api.cloudflare.com/client/v4/zones/{zone}/purge_cache',
-        headers=headers, data='{"purge_everything": true}')
+        f"https://api.cloudflare.com/client/v4/zones/{zone}/purge_cache",
+        headers=headers,
+        data='{"purge_everything": true}',
+    )
 
 
-def process_asynchronously(jobs, heading: str = None, num_threads: int = os.cpu_count()) -> str:
+def process_asynchronously(
+    jobs, heading: str = None, num_threads: int = os.cpu_count()
+) -> str:
     """Run a list of function objects asynchronously in a threa pool and return the result as a list."""
     result = {}
     q = queue.Queue(maxsize=num_threads)
@@ -115,36 +119,36 @@ def update_local_copies():
         raise EsphomeReleaseError("Local changes in esphome-docs repository!")
 
     gprint("Updating local repo copies")
-    for branch in ['master', 'dev', 'beta']:
+    for branch in ["master", "dev", "beta"]:
         EsphomeProject.checkout_pull(branch)
-    for branch in ['current', 'next', 'beta']:
+    for branch in ["current", "next", "beta"]:
         EsphomeDocsProject.checkout_pull(branch)
 
-    with EsphomeDocsProject.workon('next'):
-        EsphomeDocsProject.merge('current')
-    with EsphomeDocsProject.workon('beta'):
-        EsphomeDocsProject.merge('current')
+    with EsphomeDocsProject.workon("next"):
+        EsphomeDocsProject.merge("current")
+    with EsphomeDocsProject.workon("beta"):
+        EsphomeDocsProject.merge("current")
 
-    EsphomeHassioProject.checkout_pull('master')
+    EsphomeHassioProject.checkout_pull("master")
 
 
 def checkout_dev():
     from .project import EsphomeDocsProject, EsphomeProject
 
     gprint("Checking out dev again...")
-    EsphomeProject.checkout('dev')
-    EsphomeDocsProject.checkout('next')
+    EsphomeProject.checkout("dev")
+    EsphomeDocsProject.checkout("next")
 
 
 def random_quote():
     # Idea from @frenck here: https://github.com/home-assistant/core/pull/38065
     try:
-        js = requests.get('http://quotes.stormconsultancy.co.uk/random.json').json()
-        quote = js['quote']
-        author = js['author']
+        js = requests.get("http://quotes.stormconsultancy.co.uk/random.json").json()
+        quote = js["quote"]
+        author = js["author"]
         return f'\n> _"{quote}"_\n\n~ {author}\n'
     except Exception:  # pylint: disable=broad-except
-        return ''
+        return ""
 
 
 def confirm(text):
@@ -162,29 +166,29 @@ def execute_command(*args, **kwargs) -> bytes:
     silent: Don't print anything about this command.
     other kwargs passed to subprocess.run
     """
-    silent = kwargs.pop('silent', False)
-    full_cmd = ' '.join(shlex.quote(x) for x in args)
+    silent = kwargs.pop("silent", False)
+    full_cmd = " ".join(shlex.quote(x) for x in args)
     if not silent:
-        if 'cwd' in kwargs:
-            cwd = kwargs['cwd']
+        if "cwd" in kwargs:
+            cwd = kwargs["cwd"]
             print(f"Running: {full_cmd} (cwd={cwd})")
         else:
             print(f"Running: {full_cmd}")
 
-        if CONFIG['step']:
+        if CONFIG["step"]:
             while not click.confirm("Run command?"):
                 continue
 
-    show = kwargs.pop('show', False)
-    live = kwargs.pop('live', False)
-    on_fail = kwargs.pop('on_fail', None)
-    kwargs.setdefault('stdout', subprocess.PIPE)
-    kwargs.setdefault('stderr', subprocess.PIPE)
-    fail_ok = kwargs.pop('fail_ok', False)
+    show = kwargs.pop("show", False)
+    live = kwargs.pop("live", False)
+    on_fail = kwargs.pop("on_fail", None)
+    kwargs.setdefault("stdout", subprocess.PIPE)
+    kwargs.setdefault("stderr", subprocess.PIPE)
+    fail_ok = kwargs.pop("fail_ok", False)
 
     if live:
-        kwargs['stdout'] = subprocess.PIPE
-        kwargs['stderr'] = subprocess.STDOUT
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.STDOUT
         process = subprocess.Popen(args, **kwargs)
         while True:
             out = process.stdout.readline().decode()
@@ -203,16 +207,16 @@ def execute_command(*args, **kwargs) -> bytes:
             print("stderr: ")
         if process.stderr is None:
             raise EsphomeReleaseError
-        click.secho(process.stderr.decode(), fg='red')
+        click.secho(process.stderr.decode(), fg="red")
 
         if not fail_ok:
             if on_fail is not None:
                 return on_fail(process.stdout)
             print(f"Failed running command {full_cmd}")
             print("Please try running it again")
-            if click.confirm(click.style("If it passes, you press y", fg='red')):
+            if click.confirm(click.style("If it passes, you press y", fg="red")):
                 return process.stdout
 
-        raise EsphomeReleaseError('Failed running command!')
+        raise EsphomeReleaseError("Failed running command!")
 
     return process.stdout

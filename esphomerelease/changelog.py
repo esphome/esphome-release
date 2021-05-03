@@ -13,46 +13,54 @@ from .model import Version, BranchType
 # Extra headers that are inserted in the changelog if
 # one of these labels is applied
 LABEL_HEADERS = {
-    'new-feature': 'New Features',
-    'new-integration': 'New Integrations',
-    'breaking-change': 'Breaking Changes',
-    'cherry-picked': 'Beta Fixes',
-    'notable-change': 'Notable Changes',
+    "new-feature": "New Features",
+    "new-integration": "New Integrations",
+    "breaking-change": "Breaking Changes",
+    "cherry-picked": "Beta Fixes",
+    "notable-change": "Notable Changes",
 }
 
 
 def format_heading(title: str, markdown: bool, level: int = 2):
     if markdown:
         c = level * "#"
-        return f'{c} {title}\n'
+        return f"{c} {title}\n"
     else:
         prefix = {
-            1: '=',
-            2: '-',
-            3: '*',
+            1: "=",
+            2: "-",
+            3: "*",
         }[level]
-        return f'{title}\n{len(title) * prefix}\n'
+        return f"{title}\n{len(title) * prefix}\n"
 
 
-def format_line(*, project: Project, pr: PullRequest, markdown: bool, include_author: bool) -> str:
+def format_line(
+    *, project: Project, pr: PullRequest, markdown: bool, include_author: bool
+) -> str:
     username = pr.user.login
     if markdown:
-        pr_link = f'[{project.shortname}#{pr.number}]({pr.html_url})'
-        user_link = f'[@{username}]({pr.user.html_url})'
+        pr_link = f"[{project.shortname}#{pr.number}]({pr.html_url})"
+        user_link = f"[@{username}]({pr.user.html_url})"
     else:
-        pr_link = f':{project.shortname}pr:`{pr.number}`'
-        user_link = f':ghuser:`{username}`'
+        pr_link = f":{project.shortname}pr:`{pr.number}`"
+        user_link = f":ghuser:`{username}`"
 
-    line = f'- {project.shortname}: {pr.title} {pr_link}'
-    if include_author and username != 'OttoWinter':
-        line += f' by {user_link}'
+    line = f"- {project.shortname}: {pr.title} {pr_link}"
+    if include_author and username != "OttoWinter":
+        line += f" by {user_link}"
     return line
 
 
-def generate(*, base: BranchType, base_version: Version,
-             head: BranchType, head_version: Version,
-             markdown: bool = False, with_sections: bool = True,
-             include_author: bool = True):
+def generate(
+    *,
+    base: BranchType,
+    base_version: Version,
+    head: BranchType,
+    head_version: Version,
+    markdown: bool = False,
+    with_sections: bool = True,
+    include_author: bool = True,
+):
     gprint("Generating changelog...")
 
     # Here we store the lines to insert for each label
@@ -63,31 +71,30 @@ def generate(*, base: BranchType, base_version: Version,
     list_: List[Tuple[Project, int]] = []
 
     for prj in (EsphomeProject, EsphomeDocsProject):
-        list_ += [(prj, pr_number) for pr_number in
-                  prj.prs_between(base, head)]
+        list_ += [(prj, pr_number) for pr_number in prj.prs_between(base, head)]
 
     lines: List[Tuple[Project, PullRequest, List[str]]] = []
 
     def job(project, pr_number):
         pr: PullRequest = project.get_pr(pr_number)
 
-        labels: List[str] = [label['name'] for label in pr.labels]
+        labels: List[str] = [label["name"] for label in pr.labels]
 
         # Filter out commits for which the PR has one of the ignored
         # labels ('reverted')
-        if 'reverted' in labels:
+        if "reverted" in labels:
             return
 
-        if 'cherry-picked' in labels:
-            milestone = pr.milestone['title']
+        if "cherry-picked" in labels:
+            milestone = pr.milestone["title"]
             try:
-                pick_version = Version.parse(pr.milestone['title'])
+                pick_version = Version.parse(pr.milestone["title"])
                 if pick_version <= base_version or pick_version > head_version:
                     # Not included in this release
                     return
             except ValueError:
                 print(f"Could not parse milestone {milestone}")
-                labels.remove('cherry-picked')
+                labels.remove("cherry-picked")
 
         lines.append((project, pr, labels))
 
@@ -102,13 +109,14 @@ def generate(*, base: BranchType, base_version: Version,
 
     # Now go through the lines struct and serialize them
     for project, pr, labels in lines:
-        parts = [format_line(
-            project=project, pr=pr, markdown=markdown,
-            include_author=include_author
-        )]
+        parts = [
+            format_line(
+                project=project, pr=pr, markdown=markdown, include_author=include_author
+            )
+        ]
         parts += [f"({label})" for label in labels if label in LABEL_HEADERS]
 
-        msg = ' '.join(parts)
+        msg = " ".join(parts)
         changes.append(msg)
 
         for label in labels:
@@ -117,12 +125,16 @@ def generate(*, base: BranchType, base_version: Version,
     outp = []
 
     if with_sections:
-        if head_version is not None and head_version.patch != 0 and not head_version.beta:
+        if (
+            head_version is not None
+            and head_version.patch != 0
+            and not head_version.beta
+        ):
             # Add header for patch releases
             if not markdown:
                 now = datetime.now()
                 heading = format_heading(
-                    f'Release {head_version} - {now:%B} {now.day}', False
+                    f"Release {head_version} - {now:%B} {now.day}", False
                 )
                 outp.append(heading)
         else:
@@ -137,11 +149,11 @@ def generate(*, base: BranchType, base_version: Version,
 
                 outp.extend(prs)
                 # add newline
-                outp.append('')
+                outp.append("")
 
-            heading = format_heading('All changes', markdown)
+            heading = format_heading("All changes", markdown)
             outp.append(heading)
 
     outp.extend(changes)
-    outp.append('')
-    return '\n'.join(outp)
+    outp.append("")
+    return "\n".join(outp)

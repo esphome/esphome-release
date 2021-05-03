@@ -1,4 +1,4 @@
 import json
 
 # Configuration options
-CONFIG = json.load(open('config.json'))
+CONFIG = json.load(open("config.json"))

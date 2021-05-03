@@ -15,15 +15,15 @@ def get_session() -> GitHub:
     if GITHUB_SESSION is not None:
         return GITHUB_SESSION
 
-    token = CONFIG['github_token']
+    token = CONFIG["github_token"]
 
     # Increase read timeout for creating PRs with long bodies.
     sess = github3.session.GitHubSession(default_read_timeout=30)
     gh = GitHub(token=token, session=sess)
-    rate_limit = gh.rate_limit()['rate']
-    limit = rate_limit['limit']
-    remaining = rate_limit['remaining']
-    reset = datetime.utcfromtimestamp(rate_limit['reset'])
+    rate_limit = gh.rate_limit()["rate"]
+    limit = rate_limit["limit"]
+    remaining = rate_limit["remaining"]
+    reset = datetime.utcfromtimestamp(rate_limit["reset"])
     print(f"{remaining}/{limit} rate limit remaining")
     print(f"Reset at {reset} UTC (in {reset - datetime.utcnow()})")
     GITHUB_SESSION = gh

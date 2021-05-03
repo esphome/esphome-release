@@ -3,14 +3,21 @@ import click
 
 from .model import Version, Branch, BranchType
 from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject
-from .util import update_local_copies, gprint, copy_clipboard, open_vscode, random_quote, confirm
+from .util import (
+    update_local_copies,
+    gprint,
+    copy_clipboard,
+    open_vscode,
+    random_quote,
+    confirm,
+)
 from .exceptions import EsphomeReleaseError
 from . import changelog
 from . import docs
 
 
 def _bump_branch_name(version: Version) -> str:
-    return f'bump-{version}'
+    return f"bump-{version}"
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
@@ -18,7 +25,7 @@ def _strategy_merge(project: Project, version: Version, *, base: Branch, head: B
 
     project.checkout(base)
     project.checkout_new_branch(branch_name)
-    project.merge(head, strategy_option='theirs')
+    project.merge(head, strategy_option="theirs")
     project.bump_version(version)
 
 
@@ -36,21 +43,24 @@ def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
 def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     branch_name = _bump_branch_name(version)
     changelog_md = changelog.generate(
-        base=f'v{base}', base_version=base,
-        head=branch_name, head_version=version,
-        markdown=True, with_sections=False,
+        base=f"v{base}",
+        base_version=base,
+        head=branch_name,
+        head_version=version,
+        markdown=True,
+        with_sections=False,
         # Don't include author to not spam everybody for release PRs
-        include_author=False
+        include_author=False,
     )
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
-        body = "**Do not merge, release script will automatically merge**\n" + random_quote() + changelog_md
+        body = (
+            "**Do not merge, release script will automatically merge**\n"
+            + random_quote()
+            + changelog_md
+        )
         with proj.workon(branch_name):
-            proj.create_pr(
-                title=str(version),
-                target_branch=target_branch,
-                body=body
-            )
+            proj.create_pr(title=str(version), target_branch=target_branch, body=body)
 
 
 def _update_milestones(*, version: Version, next_version: Version):
@@ -59,17 +69,19 @@ def _update_milestones(*, version: Version, next_version: Version):
 
         old_milestone = proj.get_milestone_by_title(str(version))
         if old_milestone is not None:
-            old_milestone.update(state='closed')
+            old_milestone.update(state="closed")
 
 
 def _mark_cherry_picked(cherry_picked):
     for picked in cherry_picked:
-        picked.add_labels('cherry-picked')
+        picked.add_labels("cherry-picked")
 
 
 def _promt_base_version() -> Version:
-    base_str = click.prompt("Please enter base (what release to compare with for changelog)",
-                            default=str(EsphomeProject.latest_release()))
+    base_str = click.prompt(
+        "Please enter base (what release to compare with for changelog)",
+        default=str(EsphomeProject.latest_release()),
+    )
     return Version.parse(base_str)
 
 
@@ -77,13 +89,17 @@ def _docs_insert_changelog(*, version: Version, base: Version):
     branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
         changelog_rst = changelog.generate(
-            base=f'v{base}', base_version=base,
-            head=branch_name, head_version=version,
-            markdown=False, with_sections=version.beta == 1
+            base=f"v{base}",
+            base_version=base,
+            head=branch_name,
+            head_version=version,
+            markdown=False,
+            with_sections=version.beta == 1,
         )
 
         from sys import platform
-        if platform == 'darwin':
+
+        if platform == "darwin":
             copy_clipboard(changelog_rst)
             gprint("Changelog has been copied to your clipboard. Please paste it in.")
         else:
@@ -92,12 +108,14 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             print(changelog_rst)
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
-        changelog_path = EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
+        changelog_path = (
+            EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
+        )
         changelog_index_path = EsphomeDocsProject.path / "changelog" / "index.rst"
         open_vscode(str(changelog_path))
         open_vscode(str(changelog_index_path))
         confirm("Pasted changelog and updated index?")
-        EsphomeDocsProject.commit(f'Update changelog for {version}')
+        EsphomeDocsProject.commit(f"Update changelog for {version}")
 
 
 def _docs_update_supporters(*, version: Version):
@@ -105,12 +123,12 @@ def _docs_update_supporters(*, version: Version):
     gprint("Updating supporters")
     with EsphomeDocsProject.workon(branch_name):
         docs.gen_supporters()
-        EsphomeDocsProject.commit(f'Update supporters for {version}')
+        EsphomeDocsProject.commit(f"Update supporters for {version}")
 
 
 def cut_beta_release(version: Version):
     if not version.beta:
-        raise EsphomeReleaseError('Must be beta release!')
+        raise EsphomeReleaseError("Must be beta release!")
 
     base = _promt_base_version()
     update_local_copies()
@@ -120,8 +138,10 @@ def cut_beta_release(version: Version):
 
     if version.beta == 1:
         gprint("Creating first beta version using merge")
-        dev_str = click.prompt("Please enter next dev version (what will be seen on dev branches after release)",
-                               default=str(version.next_dev_version))
+        dev_str = click.prompt(
+            "Please enter next dev version (what will be seen on dev branches after release)",
+            default=str(version.next_dev_version),
+        )
         dev = Version.parse(dev_str)
 
         for proj in [EsphomeProject, EsphomeDocsProject]:
@@ -133,9 +153,7 @@ def cut_beta_release(version: Version):
     else:
         gprint("Creating next beta version using cherry-pick")
         for proj in [EsphomeProject, EsphomeDocsProject]:
-            cherry_picked.extend(
-                _strategy_cherry_pick(proj, version, base=Branch.BETA)
-            )
+            cherry_picked.extend(_strategy_cherry_pick(proj, version, base=Branch.BETA))
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
@@ -152,7 +170,7 @@ def cut_beta_release(version: Version):
 
 def cut_release(version: Version):
     if version.beta or version.dev:
-        raise EsphomeReleaseError('Must be full release!')
+        raise EsphomeReleaseError("Must be full release!")
 
     base = _promt_base_version()
     update_local_copies()
@@ -181,13 +199,13 @@ def cut_release(version: Version):
 
 def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
     prs = proj.get_pr_by_title(
-        title=str(version),
-        head=_bump_branch_name(version),
-        base=head_branch
+        title=str(version), head=_bump_branch_name(version), base=head_branch
     )
     release_pr = None
     if not prs:
-        confirm(f"No release PRs found for {proj.shortname}, please verify it has been merged.")
+        confirm(
+            f"No release PRs found for {proj.shortname}, please verify it has been merged."
+        )
     elif len(prs) == 1:
         release_pr = prs[0]
     else:
@@ -195,26 +213,38 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
         for i, pr in enumerate(prs, start=1):
             gprint(f" [{i}] #{pr.number} by @{pr.user.login} ({pr.html_url})")
         gprint(f" [{len(prs)+1}] Auto-merge none")
-        num = int(click.prompt(
-            f"Please select release PR for {proj.shortname}",
-            type=click.Choice([i+1 for i in range(len(prs))])
-        )) - 1
+        num = (
+            int(
+                click.prompt(
+                    f"Please select release PR for {proj.shortname}",
+                    type=click.Choice([i + 1 for i in range(len(prs))]),
+                )
+            )
+            - 1
+        )
         release_pr = None if num == len(prs) else prs[num]
 
-    if release_pr is not None and release_pr.state == 'open':
-        if click.confirm(f"Merge {proj.shortname}#{release_pr.number} \"{release_pr.title}\" "
-                         f"by @{release_pr.user.login}?"):
-            success = release_pr.merge(merge_method='merge')
+    if release_pr is not None and release_pr.state == "open":
+        if click.confirm(
+            f'Merge {proj.shortname}#{release_pr.number} "{release_pr.title}" '
+            f"by @{release_pr.user.login}?"
+        ):
+            success = release_pr.merge(merge_method="merge")
             if not success:
                 confirm("Merging failed, please check and confirm when ready")
 
 
-def _publish_release(*, version: Version, base: Version, head_branch: BranchType, prerelease: bool):
+def _publish_release(
+    *, version: Version, base: Version, head_branch: BranchType, prerelease: bool
+):
     update_local_copies()
     changelog_md = changelog.generate(
-        base=f'v{base}', base_version=base,
-        head=_bump_branch_name(version), head_version=version,
-        markdown=True, with_sections=False
+        base=f"v{base}",
+        base_version=base,
+        head=_bump_branch_name(version),
+        head_version=version,
+        markdown=True,
+        with_sections=False,
     )
     confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
@@ -226,25 +256,23 @@ def _publish_release(*, version: Version, base: Version, head_branch: BranchType
 
 def publish_beta_release(version: Version):
     if not version.beta:
-        raise EsphomeReleaseError('Must be beta release!')
+        raise EsphomeReleaseError("Must be beta release!")
 
     base = _promt_base_version()
     _publish_release(
-        version=version, base=base,
-        head_branch=Branch.BETA, prerelease=True
+        version=version, base=base, head_branch=Branch.BETA, prerelease=True
     )
 
 
 def publish_release(version: Version):
     if version.beta or version.dev:
-        raise EsphomeReleaseError('Must be full release!')
+        raise EsphomeReleaseError("Must be full release!")
 
     base = _promt_base_version()
     _publish_release(
-        version=version, base=base,
-        head_branch=Branch.STABLE, prerelease=False
+        version=version, base=base, head_branch=Branch.STABLE, prerelease=False
     )
 
 
 def _confirm_correct():
-    confirm(click.style("Please confirm everything is correct", fg='red'))
+    confirm(click.style("Please confirm everything is correct", fg="red"))

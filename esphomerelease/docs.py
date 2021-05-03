@@ -6,11 +6,11 @@ from .github import get_session
 
 # Contrib api does not return full user name, and since we query 1 api call per contrib
 # cache so next runs takes less time.
-USERS_CACHE_FILE = '.users_cache.json'
+USERS_CACHE_FILE = ".users_cache.json"
 
 
 def add_repo_contribs(session, contribs, repo):
-    repo = session.repository('esphome', repo)
+    repo = session.repository("esphome", repo)
     repo_contribs = repo.contributors()
 
     for c in repo_contribs:
@@ -21,7 +21,7 @@ def add_repo_contribs(session, contribs, repo):
 
 
 def gen_supporters():
-    template = open('supporters.template.rst', 'r', encoding='utf-8').read()
+    template = open("supporters.template.rst", "r", encoding="utf-8").read()
 
     sess = get_session()
 
@@ -32,7 +32,7 @@ def gen_supporters():
 
     contribs = {}
 
-    orgs = sess.organization('esphome')
+    orgs = sess.organization("esphome")
 
     for r in orgs.repositories():
         add_repo_contribs(sess, contribs, r.name)
@@ -43,7 +43,7 @@ def gen_supporters():
 
     for c in sorted(contribs.keys(), key=str.casefold):
         count = contribs[c]
-        if c == 'OttoWinter':
+        if c == "OttoWinter":
             OttoContribs = count
             continue
 
@@ -53,16 +53,19 @@ def gen_supporters():
 
         name = usernames[c] or c
         contribs_lines.append(
-            f'- `{name} (@{c}) <https://github.com/{c}>`__ - {count:d} contribution{("" if count == 1 else "s")}')
+            f'- `{name} (@{c}) <https://github.com/{c}>`__ - {count:d} contribution{("" if count == 1 else "s")}'
+        )
 
-    json.dump(usernames, open(USERS_CACHE_FILE, 'w'))
+    json.dump(usernames, open(USERS_CACHE_FILE, "w"))
 
-    output_filename = EsphomeDocsProject.path / 'guides' / 'supporters.rst'
-    output = codecs.open(output_filename, 'w', 'utf-8')
+    output_filename = EsphomeDocsProject.path / "guides" / "supporters.rst"
+    output = codecs.open(output_filename, "w", "utf-8")
 
-    template = template.replace('TEMPLATE_OTTO_CONTRIBUTIONS', str(OttoContribs))
-    template = template.replace('TEMPLATE_CONTRIBUTIONS', '\n'.join(contribs_lines))
+    template = template.replace("TEMPLATE_OTTO_CONTRIBUTIONS", str(OttoContribs))
+    template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
 
     now = datetime.now()
-    template = template.replace('TEMPLATE_GENERATION_DATE', f'{now:%B} {now.day}, {now.year}')
+    template = template.replace(
+        "TEMPLATE_GENERATION_DATE", f"{now:%B} {now.day}, {now.year}"
+    )
     output.write(template)
