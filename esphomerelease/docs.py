@@ -37,31 +37,21 @@ def gen_supporters():
     for r in orgs.repositories():
         add_repo_contribs(sess, contribs, r.name)
 
-    OttoContribs = 0
-
     contribs_lines = []
 
     for c in sorted(contribs.keys(), key=str.casefold):
-        count = contribs[c]
-        if c == "OttoWinter":
-            OttoContribs = count
-            continue
-
         if not c in usernames:
             user = sess.user(c)
             usernames[c] = user.name
 
         name = usernames[c] or c
-        contribs_lines.append(
-            f'- `{name} (@{c}) <https://github.com/{c}>`__ - {count:d} contribution{("" if count == 1 else "s")}'
-        )
+        contribs_lines.append(f"- `{name} (@{c}) <https://github.com/{c}>`__")
 
     json.dump(usernames, open(USERS_CACHE_FILE, "w"))
 
     output_filename = EsphomeDocsProject.path / "guides" / "supporters.rst"
     output = codecs.open(output_filename, "w", "utf-8")
 
-    template = template.replace("TEMPLATE_OTTO_CONTRIBUTIONS", str(OttoContribs))
     template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
 
     now = datetime.now()
