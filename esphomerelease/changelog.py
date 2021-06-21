@@ -45,8 +45,8 @@ def format_line(
         pr_link = f":{project.shortname}pr:`{pr.number}`"
         user_link = f":ghuser:`{username}`"
 
-    line = f"- {project.shortname}: {pr.title} {pr_link}"
-    if include_author and username != "OttoWinter":
+    line = f"- {pr.title} {pr_link}"
+    if include_author:
         line += f" by {user_link}"
     return line
 
@@ -70,8 +70,10 @@ def generate(
     # Create a list of all log lines in all relevant projects
     list_: List[Tuple[Project, int]] = []
 
-    for prj in (EsphomeProject, EsphomeDocsProject):
-        list_ += [(prj, pr_number) for pr_number in prj.prs_between(base, head)]
+    list_ += [
+        (EsphomeProject, pr_number)
+        for pr_number in EsphomeProject.prs_between(base, head)
+    ]
 
     lines: List[Tuple[Project, PullRequest, List[str]]] = []
 
