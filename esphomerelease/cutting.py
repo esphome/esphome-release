@@ -94,7 +94,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             head=branch_name,
             head_version=version,
             markdown=False,
-            with_sections=version.beta == 1,
+            with_sections=version.beta <= 1,
         )
 
         from sys import platform
@@ -244,7 +244,7 @@ def _publish_release(
         head=_bump_branch_name(version),
         head_version=version,
         markdown=True,
-        with_sections=False,
+        with_sections=(version.patch == 0 and version.beta == 0),
     )
     confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
