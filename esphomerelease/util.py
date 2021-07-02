@@ -119,7 +119,7 @@ def update_local_copies():
         raise EsphomeReleaseError("Local changes in esphome-docs repository!")
 
     gprint("Updating local repo copies")
-    for branch in ["master", "dev", "beta"]:
+    for branch in ["release", "dev", "beta"]:
         EsphomeProject.checkout_pull(branch)
     for branch in ["current", "next", "beta"]:
         EsphomeDocsProject.checkout_pull(branch)
@@ -129,7 +129,7 @@ def update_local_copies():
     with EsphomeDocsProject.workon("beta"):
         EsphomeDocsProject.merge("current")
 
-    EsphomeHassioProject.checkout_pull("master")
+    EsphomeHassioProject.checkout_pull("main")
 
 
 def checkout_dev():

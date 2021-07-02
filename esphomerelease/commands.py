@@ -45,8 +45,8 @@ def publish_release(version):
 def reset():
     if click.confirm("Reset esphome/dev ?"):
         EsphomeProject.reset_hard_remote("dev")
-    if click.confirm("Reset esphome/master ?"):
-        EsphomeProject.reset_hard_remote("master")
+    if click.confirm("Reset esphome/release ?"):
+        EsphomeProject.reset_hard_remote("release")
     if click.confirm("Reset esphome/beta ?"):
         EsphomeProject.reset_hard_remote("beta")
 
@@ -57,8 +57,8 @@ def reset():
     if click.confirm("Reset esphome-docs/beta ?"):
         EsphomeDocsProject.reset_hard_remote("beta")
 
-    if click.confirm("Reset esphome-hassio/master ?"):
-        EsphomeHassioProject.reset_hard_remote("master")
+    if click.confirm("Reset esphome-hassio/main ?"):
+        EsphomeHassioProject.reset_hard_remote("main")
 
 
 @cli.command(help="Generate release notes.")
@@ -87,7 +87,7 @@ def release_notes(markdown, with_sections, include_author):
     elif head_str == "beta":
         head_ref = Branch.BETA
         default_head_version = base_version.next_beta_version
-    elif head_str in ["stable", "master"]:
+    elif head_str in ["stable", "release"]:
         head_ref = Branch.STABLE
         default_head_version = base_version.next_patch_version
     else:
