@@ -40,19 +40,19 @@ All other beta releases are created by cherry-picking individual commits.
 
 The first stable release:
 
-  - Create a new branch `bump-{version}` (for example `bump-1.15.0`) from `master`.
+  - Create a new branch `bump-{version}` (for example `bump-1.15.0`) from `release`.
   - Merge `rc` into the new branch.
   - Bump version on that branch to `{version}` using `script/bump-version.py` and commit.
-  - Create a GitHub PR from `bump-{version}` to `master`.
+  - Create a GitHub PR from `bump-{version}` to `release`.
 
 All other stable releases:
 
-  - Create a new branch `bump-{version}` (for example `bump-1.15.1`) from `master`.
+  - Create a new branch `bump-{version}` (for example `bump-1.15.1`) from `release`.
   - Cherry-pick all PRs included in the milestone `{version}`.
   - Bump version on that branch to `{version}` using `script/bump-version.py` and commit.
-  - Create a GitHub PR from `bump-{version}` to `master`.
+  - Create a GitHub PR from `bump-{version}` to `release`.
 
-The same is repeated for `esphome-docs` with `s/dev/next/` and `s/master/current/`
+The same is repeated for `esphome-docs` with `s/dev/next/` and `s/release/current/`
 
 ## PR Merging and Releasing
 
@@ -60,7 +60,7 @@ The PR on GitHub can be used to let the CI check if everything's ok. When ready,
 
 Then comes the second step: Tagging the release and publishing it.
 
-  - Set `branch = 'rc' if is_beta_release else 'master'`
+  - Set `branch = 'rc' if is_beta_release else 'release'`
   - Create a GitHub release for branch `$branch` tagged `v{version}`, `prerelease=is_beta_release` and publish it.
 
 GitHub Actions will automatically pick up the release, build assets and publish them to registries.

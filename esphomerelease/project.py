@@ -437,7 +437,7 @@ EsphomeProject = Project(
     repo_name="esphome",
     path=CONFIG["esphome_path"],
     shortname="esphome",
-    stable_branch="master",
+    stable_branch="release",
     beta_branch="beta",
     dev_branch="dev",
 )
