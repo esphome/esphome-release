@@ -108,10 +108,17 @@ def release_notes(markdown, with_sections, include_author):
         with_sections=with_sections,
         include_author=include_author,
     )
-    print(text)
 
-    copy_clipboard(text)
-    gprint("Changelog has been copied to your clipboard!")
+    from sys import platform
+
+    if platform == "darwin":
+        copy_clipboard(text)
+        gprint("Changelog has been copied to your clipboard. Please paste it in.")
+    else:
+        # Alternative where pbcopy does not work
+        gprint("Start Changelog:")
+        print(text)
+        gprint("End Changelog, Please copy and paste changelog")
 
 
 @cli.command(help="Cherry-pick from milestone")

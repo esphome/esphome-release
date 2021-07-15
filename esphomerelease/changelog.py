@@ -29,7 +29,7 @@ def format_heading(title: str, markdown: bool, level: int = 2):
         prefix = {
             1: "=",
             2: "-",
-            3: "*",
+            3: "^",
         }[level]
         return f"{title}\n{len(title) * prefix}\n"
 
@@ -140,20 +140,22 @@ def generate(
                 )
                 outp.append(heading)
         else:
+            heading = format_heading("Full list of changes", markdown)
+            outp.append(heading)
             # For non-patch releases, insert header groups
             for label, title in LABEL_HEADERS.items():
                 prs = label_groups[label]
                 if not prs:
                     continue
 
-                heading = format_heading(title, markdown)
+                heading = format_heading(title, markdown, level=3)
                 outp.append(heading)
 
                 outp.extend(prs)
                 # add newline
                 outp.append("")
 
-            heading = format_heading("All changes", markdown)
+            heading = format_heading("All changes", markdown, level=3)
             outp.append(heading)
 
     outp.extend(changes)
