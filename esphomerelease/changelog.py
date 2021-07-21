@@ -14,7 +14,7 @@ from .model import Version, BranchType
 # one of these labels is applied
 LABEL_HEADERS = {
     "new-feature": "New Features",
-    "new-integration": "New Integrations",
+    "new-integration": "New Components",
     "breaking-change": "Breaking Changes",
     "cherry-picked": "Beta Fixes",
     "notable-change": "Notable Changes",
