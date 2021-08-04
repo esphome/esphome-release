@@ -2,6 +2,7 @@ import glob
 from typing import List
 
 import click
+from github3.issues.issue import Issue
 from github3.repos import Repository
 
 from . import cutting, changelog
@@ -198,7 +199,8 @@ def labels():
     for repo in repos:
         has_labels = [label.name for label in repo.labels()]
         for label in found_labels:
-            if label in has_labels:
+            found = any(x.lower() == label.lower() for x in has_labels)
+            if found:
                 continue
             print(f"Create label '{label}' in {repo.name}")
             repo.create_label(label, "ededed")
