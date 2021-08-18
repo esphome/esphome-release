@@ -204,7 +204,7 @@ class Project:
         self.push()
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
-        tag = f"v{version}"
+        tag = f"{version}"
         rel = self.repo.create_release(
             tag,
             target_commitish=self.branch,
@@ -412,7 +412,7 @@ class Project:
 
     def bump_version(self, version: Version):
         self.run_command("script/bump-version.py", str(version))
-        self.commit(f"Bump version to v{version}")
+        self.commit(f"Bump version to {version}")
 
     def prs_between(self, base: BranchType, head: BranchType) -> List[int]:
         base = self.lookup_branch(base)

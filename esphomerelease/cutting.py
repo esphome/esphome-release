@@ -112,7 +112,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = (
-            EsphomeDocsProject.path / "changelog" / f"v{changelog_version}.rst"
+            EsphomeDocsProject.path / "changelog" / f"{changelog_version}.rst"
         )
         changelog_index_path = EsphomeDocsProject.path / "changelog" / "index.rst"
         open_vscode(str(changelog_path))
