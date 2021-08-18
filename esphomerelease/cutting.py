@@ -42,18 +42,20 @@ def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
 
 def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     branch_name = _bump_branch_name(version)
-    changelog_md = changelog.generate(
-        base=f"v{base}",
-        base_version=base,
-        head=branch_name,
-        head_version=version,
-        markdown=True,
-        with_sections=False,
-        # Don't include author to not spam everybody for release PRs
-        include_author=False,
-    )
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
+        changelog_md = changelog.generate(
+            project=proj,
+            base=f"v{base}",
+            base_version=base,
+            head=branch_name,
+            head_version=version,
+            markdown=True,
+            with_sections=False,
+            # Don't include author to not spam everybody for release PRs
+            include_author=False,
+        )
+
         body = (
             "**Do not merge, release script will automatically merge**\n"
             + random_quote()
@@ -89,6 +91,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
     branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
         changelog_rst = changelog.generate(
+            project=EsphomeProject,
             base=f"v{base}",
             base_version=base,
             head=branch_name,
@@ -238,16 +241,17 @@ def _publish_release(
     *, version: Version, base: Version, head_branch: BranchType, prerelease: bool
 ):
     update_local_copies()
-    changelog_md = changelog.generate(
-        base=f"v{base}",
-        base_version=base,
-        head=_bump_branch_name(version),
-        head_version=version,
-        markdown=True,
-        with_sections=(version.patch == 0 and version.beta == 0),
-    )
     confirm(f"Publish version {version}?")
     for proj in [EsphomeProject, EsphomeDocsProject]:
+        changelog_md = changelog.generate(
+            project=proj,
+            base=f"v{base}",
+            base_version=base,
+            head=_bump_branch_name(version),
+            head_version=version,
+            markdown=True,
+            with_sections=(version.patch == 0 and version.beta == 0),
+        )
         _merge_release_pr(proj=proj, version=version, head_branch=head_branch)
         with proj.workon(head_branch):
             proj.pull()

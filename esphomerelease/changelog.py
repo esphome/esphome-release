@@ -20,6 +20,13 @@ LABEL_HEADERS = {
     "notable-change": "Notable Changes",
 }
 
+LINE_LABELS = [
+    "new-feature",
+    "new-integration",
+    "breaking-change",
+    "notable-change",
+]
+
 
 def format_heading(title: str, markdown: bool, level: int = 2):
     if markdown:
@@ -53,6 +60,7 @@ def format_line(
 
 def generate(
     *,
+    project: Project,
     base: BranchType,
     base_version: Version,
     head: BranchType,
@@ -68,16 +76,11 @@ def generate(
     label_groups: Dict[str, List[str]] = defaultdict(list)
 
     # Create a list of all log lines in all relevant projects
-    list_: List[Tuple[Project, int]] = []
+    list_ = project.prs_between(base, head)
 
-    list_ += [
-        (EsphomeProject, pr_number)
-        for pr_number in EsphomeProject.prs_between(base, head)
-    ]
+    lines: List[Tuple[PullRequest, List[str]]] = []
 
-    lines: List[Tuple[Project, PullRequest, List[str]]] = []
-
-    def job(project, pr_number):
+    def job(pr_number):
         pr: PullRequest = project.get_pr(pr_number)
 
         labels: List[str] = [label["name"] for label in pr.labels]
@@ -98,25 +101,25 @@ def generate(
                 print(f"Could not parse milestone {milestone}")
                 labels.remove("cherry-picked")
 
-        lines.append((project, pr, labels))
+        lines.append((pr, labels))
 
-    jobs = [functools.partial(job, *it) for it in list_]
+    jobs = [functools.partial(job, pr) for pr in list_]
     process_asynchronously(jobs, "Load PRs")
 
     # Sort log lines by when the PR was merged
-    lines.sort(key=lambda x: x[1].merged_at)
+    lines.sort(key=lambda x: x[0].merged_at)
 
     # A list of strings containing all serialized changes
     changes: List[str] = []
 
     # Now go through the lines struct and serialize them
-    for project, pr, labels in lines:
+    for pr, labels in lines:
         parts = [
             format_line(
                 project=project, pr=pr, markdown=markdown, include_author=include_author
             )
         ]
-        parts += [f"({label})" for label in labels if label in LABEL_HEADERS]
+        parts += [f"({label})" for label in labels if label in LINE_LABELS]
 
         msg = " ".join(parts)
         changes.append(msg)

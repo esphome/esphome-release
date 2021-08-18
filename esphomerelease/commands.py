@@ -101,6 +101,7 @@ def release_notes(markdown, with_sections, include_author):
     head_version = Version.parse(head_version_str)
 
     text = changelog.generate(
+        project=EsphomeProject,
         base=base_ref,
         base_version=base_version,
         head=head_ref,
