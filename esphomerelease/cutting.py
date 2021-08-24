@@ -46,7 +46,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         changelog_md = changelog.generate(
             project=proj,
-            base=f"v{base}",
+            base=f"{base}",
             base_version=base,
             head=branch_name,
             head_version=version,
@@ -92,7 +92,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
     with EsphomeDocsProject.workon(branch_name):
         changelog_rst = changelog.generate(
             project=EsphomeProject,
-            base=f"v{base}",
+            base=f"{base}",
             base_version=base,
             head=branch_name,
             head_version=version,
@@ -245,7 +245,7 @@ def _publish_release(
     for proj in [EsphomeProject, EsphomeDocsProject]:
         changelog_md = changelog.generate(
             project=proj,
-            base=f"v{base}",
+            base=f"{base}",
             base_version=base,
             head=_bump_branch_name(version),
             head_version=version,

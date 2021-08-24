@@ -78,7 +78,7 @@ def release_notes(markdown, with_sections, include_author):
         "Please enter base version", default=str(EsphomeProject.latest_release())
     )
     base_version = Version.parse(base_str)
-    base_ref = f"v{base_str}"
+    base_ref = f"{base_str}"
 
     head_str = click.prompt("Please enter head ref (dev/beta/stable)", default="dev")
     default_head_version = None
@@ -92,7 +92,7 @@ def release_notes(markdown, with_sections, include_author):
         head_ref = Branch.STABLE
         default_head_version = base_version.next_patch_version
     else:
-        head_ref = f"v{head_str}"
+        head_ref = f"{head_str}"
         default_head_version = Version.parse(head_str)
 
     head_version_str = click.prompt(
