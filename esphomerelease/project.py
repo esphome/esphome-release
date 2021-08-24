@@ -163,11 +163,11 @@ class Project:
     def latest_release(self, *, include_prereleases: bool = True) -> Version:
         """Get the latest release"""
         if not include_prereleases:
-            return Version.parse(self.repo.latest_release().tag_name[1:])
+            return Version.parse(self.repo.latest_release().tag_name)
         found_versions = []
         for release in self.repo.releases():
             try:
-                found_versions.append(Version.parse(release.tag_name[1:]))
+                found_versions.append(Version.parse(release.tag_name))
             except ValueError:
                 pass
         return max(found_versions)
