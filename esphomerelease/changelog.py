@@ -16,7 +16,7 @@ LABEL_HEADERS = {
     "new-feature": "New Features",
     "new-integration": "New Components",
     "breaking-change": "Breaking Changes",
-    "cherry-picked": "Beta Fixes",
+    "cherry-picked": "Beta Changes",
     "notable-change": "Notable Changes",
 }
 
