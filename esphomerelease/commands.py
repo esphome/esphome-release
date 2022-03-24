@@ -2,7 +2,6 @@ import glob
 from typing import List
 
 import click
-from github3.issues.issue import Issue
 from github3.repos import Repository
 
 from . import cutting, changelog
