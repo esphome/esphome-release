@@ -228,13 +228,9 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
         release_pr = None if num == len(prs) else prs[num]
 
     if release_pr is not None and release_pr.state == "open":
-        if click.confirm(
-            f'Merge {proj.shortname}#{release_pr.number} "{release_pr.title}" '
-            f"by @{release_pr.user.login}?"
-        ):
-            success = release_pr.merge(merge_method="merge")
-            if not success:
-                confirm("Merging failed, please check and confirm when ready")
+        success = release_pr.merge(merge_method="merge")
+        if not success:
+            confirm("Merging failed, please check and confirm when ready")
 
 
 def _publish_release(
