@@ -139,18 +139,6 @@ def checkout_dev():
     EsphomeProject.checkout("dev")
     EsphomeDocsProject.checkout("next")
 
-
-def random_quote():
-    # Idea from @frenck here: https://github.com/home-assistant/core/pull/38065
-    try:
-        js = requests.get("http://quotes.stormconsultancy.co.uk/random.json").json()
-        quote = js["quote"]
-        author = js["author"]
-        return f'\n> _"{quote}"_\n\n~ {author}\n'
-    except Exception:  # pylint: disable=broad-except
-        return ""
-
-
 def confirm(text):
     while not click.confirm(text):
         pass

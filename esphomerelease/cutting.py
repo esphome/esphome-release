@@ -8,7 +8,6 @@ from .util import (
     gprint,
     copy_clipboard,
     open_vscode,
-    random_quote,
     confirm,
 )
 from .exceptions import EsphomeReleaseError
@@ -58,7 +57,6 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 
         body = (
             "**Do not merge, release script will automatically merge**\n"
-            + random_quote()
             + changelog_md
         )
         with proj.workon(branch_name):
