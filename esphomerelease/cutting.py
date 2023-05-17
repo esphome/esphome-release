@@ -270,6 +270,11 @@ def publish_release(version: Version):
     _publish_release(
         version=version, base=base, head_branch=Branch.STABLE, prerelease=False
     )
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        with proj.workon(Branch.BETA):
+            proj.pull()
+            proj.merge(Branch.STABLE)
+            proj.push()
 
 
 def _confirm_correct():
