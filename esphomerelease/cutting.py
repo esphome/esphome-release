@@ -56,8 +56,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
         )
 
         body = (
-            "**Do not merge, release script will automatically merge**\n"
-            + changelog_md
+            "**Do not merge, release script will automatically merge**\n" + changelog_md
         )
         with proj.workon(branch_name):
             proj.create_pr(title=str(version), target_branch=target_branch, body=body)
@@ -77,7 +76,7 @@ def _mark_cherry_picked(cherry_picked):
         picked.add_labels("cherry-picked")
 
 
-def _promt_base_version() -> Version:
+def _prompt_base_version() -> Version:
     base_str = click.prompt(
         "Please enter base (what release to compare with for changelog)",
         default=str(EsphomeProject.latest_release()),
@@ -132,7 +131,7 @@ def cut_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _promt_base_version()
+    base = _prompt_base_version()
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -174,7 +173,7 @@ def cut_release(version: Version):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _promt_base_version()
+    base = _prompt_base_version()
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -257,7 +256,7 @@ def publish_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _promt_base_version()
+    base = _prompt_base_version()
     _publish_release(
         version=version, base=base, head_branch=Branch.BETA, prerelease=True
     )
@@ -267,7 +266,7 @@ def publish_release(version: Version):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _promt_base_version()
+    base = _prompt_base_version()
     _publish_release(
         version=version, base=base, head_branch=Branch.STABLE, prerelease=False
     )
