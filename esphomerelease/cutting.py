@@ -50,7 +50,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             head=branch_name,
             head_version=version,
             markdown=True,
-            with_sections=False,
+            with_sections=True,
             # Don't include author to not spam everybody for release PRs
             include_author=False,
         )
