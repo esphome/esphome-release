@@ -1,4 +1,5 @@
 """Logic for cutting releases."""
+
 import click
 
 from .model import Version, Branch, BranchType
@@ -272,6 +273,10 @@ def publish_release(version: Version):
     )
     for proj in [EsphomeProject, EsphomeDocsProject]:
         with proj.workon(Branch.BETA):
+            proj.pull()
+            proj.merge(Branch.STABLE)
+            proj.push()
+        with proj.workon(Branch.DEV):
             proj.pull()
             proj.merge(Branch.STABLE)
             proj.push()
