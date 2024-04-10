@@ -15,6 +15,7 @@ from .model import Version, BranchType
 LABEL_HEADERS = {
     "new-feature": "New Features",
     "new-integration": "New Components",
+    "new-platform": "New Platforms",
     "breaking-change": "Breaking Changes",
     "cherry-picked": "Beta Changes",
     "notable-change": "Notable Changes",
@@ -23,6 +24,7 @@ LABEL_HEADERS = {
 LINE_LABELS = [
     "new-feature",
     "new-integration",
+    "new-platform",
     "breaking-change",
     "notable-change",
 ]
@@ -104,6 +106,7 @@ def generate(
         lines.append((pr, labels))
 
     jobs = [functools.partial(job, pr) for pr in list_]
+    gprint(f"Processing {len(jobs)} PRs")
     process_asynchronously(jobs, "Load PRs")
 
     # Sort log lines by when the PR was merged
