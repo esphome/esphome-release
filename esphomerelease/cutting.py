@@ -261,6 +261,11 @@ def publish_beta_release(version: Version):
     _publish_release(
         version=version, base=base, head_branch=Branch.BETA, prerelease=True
     )
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        with proj.workon(Branch.DEV):
+            proj.pull()
+            proj.merge(Branch.BETA)
+            proj.push()
 
 
 def publish_release(version: Version):
