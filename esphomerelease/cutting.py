@@ -114,9 +114,12 @@ def _docs_insert_changelog(*, version: Version, base: Version):
         )
         changelog_index_path = EsphomeDocsProject.path / "changelog" / "index.rst"
         open_vscode(str(changelog_path))
+        message = "Pasted changelog"
         if version.beta == 1:
             open_vscode(str(changelog_index_path))
-        confirm("Pasted changelog and updated index?")
+            message += " and updated index"
+        message += "?"
+        confirm(message)
         EsphomeDocsProject.commit(f"Update changelog for {version}")
 
 
