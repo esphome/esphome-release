@@ -267,7 +267,7 @@ def publish_beta_release(version: Version):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         with proj.workon(Branch.DEV):
             proj.pull()
-            proj.merge(Branch.BETA)
+            proj.merge(Branch.BETA, "ours")
             proj.push()
 
 
@@ -282,11 +282,11 @@ def publish_release(version: Version):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         with proj.workon(Branch.BETA):
             proj.pull()
-            proj.merge(Branch.STABLE)
+            proj.merge(Branch.STABLE, "ours")
             proj.push()
         with proj.workon(Branch.DEV):
             proj.pull()
-            proj.merge(Branch.STABLE)
+            proj.merge(Branch.STABLE, "ours")
             proj.push()
 
 
