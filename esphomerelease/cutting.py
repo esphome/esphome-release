@@ -15,6 +15,14 @@ from .exceptions import EsphomeReleaseError
 from . import changelog
 from . import docs
 
+METADATA_MD = """
+<details>
+<summary>Metadata</summary>
+
+@coderabbitai ignore
+</details>
+"""
+
 
 def _bump_branch_name(version: Version) -> str:
     return f"bump-{version}"
@@ -57,7 +65,9 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
         )
 
         body = (
-            "**Do not merge, release script will automatically merge**\n" + changelog_md
+            "**Do not merge, release script will automatically merge**\n"
+            + changelog_md
+            + METADATA_MD
         )
         with proj.workon(branch_name):
             proj.create_pr(title=str(version), target_branch=target_branch, body=body)
