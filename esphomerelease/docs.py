@@ -1,36 +1,37 @@
 import json
-import codecs
+from collections import OrderedDict
 from datetime import datetime
-from .project import EsphomeDocsProject
+
 from .github import get_session
+from .project import EsphomeDocsProject
 
 # Contrib api does not return full user name, and since we query 1 api call per contrib
 # cache so next runs takes less time.
-USERS_CACHE_FILE = ".users_cache.json"
+USERS_CACHE_FILE = "users_cache.json"
 
 
-def add_repo_contribs(session, contribs, repo):
+def add_repo_contribs(session, contribs: list[str], repo):
     repo = session.repository("esphome", repo)
     repo_contribs = repo.contributors()
 
     for c in repo_contribs:
-        if c.login in contribs:
-            contribs[c.login] = contribs[c.login] + c.contributions_count
-        else:
-            contribs[c.login] = c.contributions_count
+        if c.login not in contribs:
+            contribs.append(c.login)
 
 
 def gen_supporters():
-    template = open("supporters.template.rst", "r", encoding="utf-8").read()
+    with open("supporters.template.rst", "r", encoding="utf-8") as f:
+        template = f.read()
 
     sess = get_session()
 
     try:
-        usernames = json.load(open(USERS_CACHE_FILE))
+        with open(USERS_CACHE_FILE, encoding="utf-8") as f:
+            usernames: dict[str, str] = json.load(f)
     except FileNotFoundError:
         usernames = {}
 
-    contribs = {}
+    contribs: list[str] = []
 
     orgs = sess.organization("esphome")
 
@@ -39,18 +40,25 @@ def gen_supporters():
 
     contribs_lines = []
 
-    for c in sorted(contribs.keys(), key=str.casefold):
-        if not c in usernames:
+    sorted_usernames = sorted(usernames.keys(), key=str.casefold)
+
+    for c in sorted(contribs, key=str.casefold):
+        if c not in sorted_usernames:
             user = sess.user(c)
             usernames[c] = user.name
 
+    sorted_users = OrderedDict(
+        sorted(usernames.items(), key=lambda item: str.casefold(item[0]))
+    )
+
+    for c in sorted_users:
         name = usernames[c] or c
         contribs_lines.append(f"- `{name} (@{c}) <https://github.com/{c}>`__")
 
-    json.dump(usernames, open(USERS_CACHE_FILE, "w"))
+    with open(USERS_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(sorted_users, f, indent=2)
 
     output_filename = EsphomeDocsProject.path / "guides" / "supporters.rst"
-    output = codecs.open(output_filename, "w", "utf-8")
 
     template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
 
@@ -58,4 +66,5 @@ def gen_supporters():
     template = template.replace(
         "TEMPLATE_GENERATION_DATE", f"{now:%B} {now.day}, {now.year}"
     )
-    output.write(template)
+    with open(output_filename, "w", encoding="utf-8") as f:
+        f.write(template)

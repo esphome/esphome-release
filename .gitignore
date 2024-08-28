@@ -185,5 +185,3 @@ dmypy.json
 
 /config.json
 /.vscode/settings.json
-
-.users_cache.json
