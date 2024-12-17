@@ -24,3 +24,4 @@ disable=
   unnecessary-pass,
   blacklisted-name,
   cyclic-import,
+  missing-function-docstring,
