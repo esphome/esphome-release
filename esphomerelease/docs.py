@@ -14,9 +14,12 @@ def add_repo_contribs(session, contribs: list[str], repo):
     repo = session.repository("esphome", repo)
     repo_contribs = repo.contributors()
 
-    for c in repo_contribs:
-        if c.login not in contribs:
-            contribs.append(c.login)
+    try:
+        for c in repo_contribs:
+            if c.login not in contribs:
+                contribs.append(c.login)
+    except Exception as e:
+        print(f"Error getting contributors from {repo.name}: {e}")
 
 
 def gen_supporters():
