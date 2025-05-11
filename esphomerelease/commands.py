@@ -4,13 +4,13 @@ from typing import List
 import click
 from github3.repos import Repository
 
-from . import cutting, changelog
-from .github import get_session
-from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
-from .model import Version, Branch
+from . import changelog, cutting
 from .config import CONFIG
-from .util import gprint, copy_clipboard, confirm
 from .docs import gen_supporters
+from .github import get_session
+from .model import Branch, Version
+from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject
+from .util import confirm, copy_clipboard, gprint
 
 
 @click.group()
@@ -72,15 +72,30 @@ def reset():
     help="Include author mentions",
     default=True,
 )
-def release_notes(markdown, with_sections, include_author):
-    base_str = click.prompt(
-        "Please enter base version", default=str(EsphomeProject.latest_release())
-    )
+@click.option("--base-ref", default=None, help="Base version")
+@click.option("--head-ref", default=None, help="Head version")
+@click.option("--head-version", default=None, help="Head version")
+def release_notes(
+    markdown, with_sections, include_author, base_ref, head_ref, head_version
+):
+    if base_ref is None:
+        base_str = click.prompt(
+            "Please enter base version", default=str(EsphomeProject.latest_release())
+        )
+    else:
+        base_str = base_ref
+
     base_version = Version.parse(base_str)
     base_ref = f"{base_str}"
 
-    head_str = click.prompt("Please enter head ref (dev/beta/stable)", default="dev")
     default_head_version = None
+    if head_ref is None:
+        head_str = click.prompt(
+            "Please enter head ref (dev/beta/stable)", default="dev"
+        )
+    else:
+        head_str = head_ref
+
     if head_str == "dev":
         head_ref = Branch.DEV
         default_head_version = base_version.next_dev_version
@@ -94,9 +109,12 @@ def release_notes(markdown, with_sections, include_author):
         head_ref = f"{head_str}"
         default_head_version = Version.parse(head_str)
 
-    head_version_str = click.prompt(
-        "Please enter head version", default=str(default_head_version)
-    )
+    if head_version is None:
+        head_version_str = click.prompt(
+            "Please enter head version", default=str(default_head_version)
+        )
+    else:
+        head_version_str = head_version
     head_version = Version.parse(head_version_str)
 
     text = changelog.generate(
