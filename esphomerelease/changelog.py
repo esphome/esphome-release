@@ -29,6 +29,10 @@ LINE_LABELS = [
     "notable-change",
 ]
 
+DEPENDENCY_LABELS = [
+    "dependencies",
+]
+
 
 def format_heading(title: str, markdown: bool, level: int = 2):
     if markdown:
@@ -125,7 +129,9 @@ def generate(
         parts += [f"({label})" for label in labels if label in LINE_LABELS]
 
         msg = " ".join(parts)
-        changes.append(msg)
+
+        if not with_sections or not any(label in labels for label in DEPENDENCY_LABELS):
+            changes.append(msg)
 
         for label in labels:
             label_groups[label].append(msg)
@@ -164,6 +170,28 @@ def generate(
             heading = format_heading("All changes", markdown, level=3)
             outp.append(heading)
 
-    outp.extend(changes)
+    if with_sections:
+        outp.append(".. collapse:: Show")
+        outp.append("    :open:")
+        outp.append("")
+        outp.extend([f"    {pr_line}" for pr_line in changes])
+    else:
+        outp.extend(changes)
     outp.append("")
+
+    if with_sections:
+        depdendency_prs = [
+            pr
+            for label, prs in label_groups.items()
+            if label in DEPENDENCY_LABELS
+            for pr in prs
+        ]
+        if depdendency_prs:
+            heading = format_heading("Dependency Changes", markdown, level=3)
+            outp.append(heading)
+            outp.append(".. collapse:: Show")
+            outp.append("")
+            outp.extend([f"    {pr_line}" for pr_line in depdendency_prs])
+            outp.append("")
+
     return "\n".join(outp)
