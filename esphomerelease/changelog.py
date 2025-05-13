@@ -1,14 +1,13 @@
+import functools
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
-import functools
 
 from github3.pulls import PullRequest
 
-from .util import gprint, process_asynchronously
+from .model import BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
-from .model import Version, BranchType
-
+from .util import gprint, process_asynchronously
 
 # Extra headers that are inserted in the changelog if
 # one of these labels is applied
@@ -171,10 +170,17 @@ def generate(
             outp.append(heading)
 
     if with_sections:
-        outp.append(".. collapse:: Show")
-        outp.append("    :open:")
-        outp.append("")
-        outp.extend([f"    {pr_line}" for pr_line in changes])
+        if markdown:
+            outp.append("<details>")
+            outp.append("<summary>Show</summary>")
+            outp.append("")
+            outp.extend(changes)
+            outp.append("</details>")
+        else:
+            outp.append(".. collapse:: Show")
+            outp.append("    :open:")
+            outp.append("")
+            outp.extend([f"    {pr_line}" for pr_line in changes])
     else:
         outp.extend(changes)
     outp.append("")
@@ -189,9 +195,16 @@ def generate(
         if depdendency_prs:
             heading = format_heading("Dependency Changes", markdown, level=3)
             outp.append(heading)
-            outp.append(".. collapse:: Show")
-            outp.append("")
-            outp.extend([f"    {pr_line}" for pr_line in depdendency_prs])
-            outp.append("")
+            if markdown:
+                outp.append("<details>")
+                outp.append("<summary>Show</summary>")
+                outp.append("")
+                outp.extend(depdendency_prs)
+                outp.append("</details>")
+            else:
+                outp.append(".. collapse:: Show")
+                outp.append("")
+                outp.extend([f"    {pr_line}" for pr_line in depdendency_prs])
+                outp.append("")
 
     return "\n".join(outp)
