@@ -1,7 +1,9 @@
 import glob
+import json
 from typing import List
 
 import click
+from github3.issues.label import Label
 from github3.repos import Repository
 
 from . import changelog, cutting
@@ -193,7 +195,7 @@ def count_lines():
 @cli.command(help="Create labels")
 def labels():
     components_folder = EsphomeProject.path / "esphome" / "components"
-    found_labels = []
+    found_components: list[str] = []
     for child in components_folder.iterdir():
         if not child.is_dir():
             continue
@@ -202,11 +204,11 @@ def labels():
             # print(f"No __init__: {child}")
             continue
 
-        integration_name = child.stem
-        found_labels.append(f"integration: {integration_name}")
+        component_name = child.stem
+        found_components.append(component_name)
 
-    found_labels.sort()
-    # print('\n'.join(found_labels))
+    found_components.sort()
+    # print('\n'.join(found_components))
 
     sess = get_session()
     repos: List[Repository] = [
@@ -215,14 +217,48 @@ def labels():
         sess.repository("esphome", "esphome"),
         sess.repository("esphome", "esphome-docs"),
     ]
+    failed_to_update: dict[str, list[str]] = {}
+    failed_to_create: dict[str, list[str]] = {}
     for repo in repos:
-        has_labels = [label.name for label in repo.labels()]
-        for label in found_labels:
-            found = any(x.lower() == label.lower() for x in has_labels)
-            if found:
+        repo_labels: list[Label] = [label for label in repo.labels()]
+        for comp in found_components:
+            label_name = f"component: {comp.lower()}"
+            found_old_labels = [x for x in repo_labels if x.name.lower() == f"integration: {comp.lower()}"]
+            found_new_labels = any(x.name.lower() == label_name for x in repo_labels)
+            if found_old_labels:
+                for found_old_label in found_old_labels:
+                    print(f"Updated label from {found_old_label.name} to '{label_name}' in {repo.name}")
+                    try:
+                        found_old_label.update(name=label_name, color="ededed")
+                    except Exception as e:
+                        failed_to_update.setdefault(repo.name, []).append(label_name)
                 continue
-            print(f"Create label '{label}' in {repo.name}")
-            repo.create_label(label, "ededed")
+            if found_new_labels:
+                continue
+            print(f"Create label '{label_name}' in {repo.name}")
+            try:
+                repo.create_label(name=label_name, color="ededed")
+            except Exception as e:
+                failed_to_create.setdefault(repo.name, []).append(label_name)
+
+        old_repo_labels = [label for label in repo_labels if label.name.startswith("integration: ")]
+        for old_label in old_repo_labels:
+            print(f"Updating label '{old_label.name}' in {repo.name} to 'component: {old_label.name[13:].lower()}'")
+            try:
+                old_label.update(name=f"component: {old_label.name[13:].lower()}", color="ededed")
+            except Exception as e:
+                failed_to_update.setdefault(repo.name, []).append(f"component: {old_label.name[13:].lower()}")
+
+    if failed_to_update:
+        print("Failed to update labels in the following repos:")
+        for repo_name, labels in failed_to_update.items():
+            print(f"{repo_name}: {json.dumps(labels)}")
+
+    if failed_to_create:
+        print("Failed to create labels in the following repos:")
+        for repo_name, labels in failed_to_create.items():
+            print(f"{repo_name}: {json.dumps(labels)}")
+
 
 
 @cli.command(help="Generate Supporters.")
