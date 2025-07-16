@@ -123,6 +123,7 @@ def release_notes(
         base_version=base_version,
         head=head_ref,
         head_version=head_version,
+        prerelease=head_version.beta > 0,
         markdown=markdown,
         with_sections=with_sections,
         include_author=include_author,

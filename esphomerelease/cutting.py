@@ -2,18 +2,17 @@
 
 import click
 
-from .model import Version, Branch, BranchType
-from .project import Project, EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject
-from .util import (
-    update_local_copies,
-    gprint,
-    copy_clipboard,
-    open_vscode,
-    confirm,
-)
+from . import changelog, docs
 from .exceptions import EsphomeReleaseError
-from . import changelog
-from . import docs
+from .model import Branch, BranchType, Version
+from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, Project
+from .util import (
+    confirm,
+    copy_clipboard,
+    gprint,
+    open_vscode,
+    update_local_copies,
+)
 
 METADATA_MD = """
 <details>
@@ -58,6 +57,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             base_version=base,
             head=branch_name,
             head_version=version,
+            prerelease=target_branch == Branch.BETA,
             markdown=True,
             with_sections=True,
             # Don't include author to not spam everybody for release PRs
@@ -104,6 +104,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             base_version=base,
             head=branch_name,
             head_version=version,
+            prerelease=version.beta > 0,
             markdown=False,
             with_sections=version.beta <= 1,
         )
@@ -257,6 +258,7 @@ def _publish_release(
             base_version=base,
             head=_bump_branch_name(version),
             head_version=version,
+            prerelease=prerelease,
             markdown=True,
             with_sections=(version.patch == 0 and version.beta == 0),
         )

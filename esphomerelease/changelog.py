@@ -70,6 +70,7 @@ def generate(
     base_version: Version,
     head: BranchType,
     head_version: Version,
+    prerelease: bool,
     markdown: bool = False,
     with_sections: bool = True,
     include_author: bool = True,
@@ -155,6 +156,8 @@ def generate(
             outp.append(heading)
             # For non-patch releases, insert header groups
             for label, title in LABEL_HEADERS.items():
+                if not prerelease and title == "Beta Changes":
+                    continue  # Skip beta changes for non-prerelease
                 prs = label_groups[label]
                 if not prs:
                     continue
