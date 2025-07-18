@@ -1,23 +1,24 @@
-from typing import Optional, Dict, Union, List
-import time
-import re
-from pathlib import Path
 import contextlib
 import os
+import re
 import sys
+import time
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
-from github3.repos.repo import Repository
-from github3.pulls import PullRequest
-from github3.issues.issue import Issue
-from github3.issues.milestone import Milestone
 import click
 import pexpect
+from github3.exceptions import NotFoundError
+from github3.issues.issue import Issue
+from github3.issues.milestone import Milestone
+from github3.pulls import PullRequest
+from github3.repos.repo import Repository
 
 from . import util
-from .model import Version, Branch, BranchType
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
-from .util import gprint, confirm, execute_command
+from .model import Branch, BranchType, Version
+from .util import confirm, execute_command, gprint
 
 
 class Project:
@@ -127,7 +128,10 @@ class Project:
 
         for issue in self.repo.issues(milestone=milestone.number, state="closed"):
             # Convert to pull request and check if it's merged yet
-            pull = self.repo.pull_request(issue.number)
+            try:
+                pull = self.repo.pull_request(issue.number)
+            except NotFoundError:
+                continue #issue, not pull request
 
             if not pull.is_merged():
                 log = click.style(
