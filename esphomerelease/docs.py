@@ -2,6 +2,8 @@ import json
 from collections import OrderedDict
 from datetime import datetime
 
+from github3.exceptions import NotFoundError
+
 from .github import get_session
 from .project import EsphomeDocsProject
 
@@ -47,8 +49,11 @@ def gen_supporters():
 
     for c in sorted(contribs, key=str.casefold):
         if c not in sorted_usernames:
-            user = sess.user(c)
-            usernames[c] = user.name
+            try:
+                user = sess.user(c)
+                usernames[c] = user.name
+            except NotFoundError as e:
+                print(f"Error getting user {c}: {e}")
 
     sorted_users = OrderedDict(
         sorted(usernames.items(), key=lambda item: str.casefold(item[0]))
