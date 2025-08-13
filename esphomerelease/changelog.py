@@ -97,8 +97,8 @@ def generate(
             return
 
         if "cherry-picked" in labels:
-            milestone = pr.milestone["title"]
             try:
+                milestone = pr.milestone["title"]
                 pick_version = Version.parse(pr.milestone["title"])
                 if pick_version <= base_version or pick_version > head_version:
                     # Not included in this release
@@ -106,6 +106,8 @@ def generate(
             except ValueError:
                 print(f"Could not parse milestone {milestone}")
                 labels.remove("cherry-picked")
+            except TypeError:
+                print(f"PR {pr.number} has no milestone")
 
         lines.append((pr, labels))
 
