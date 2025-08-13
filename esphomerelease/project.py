@@ -328,7 +328,7 @@ class Project:
         self.run_git(*command, on_fail=on_fail)
 
     # pylint: disable=redefined-outer-name
-    def commit(self, message: str, ignore_empty: bool = False, confirm: bool = False):
+    def commit(self, message: str, ignore_empty: bool = False, confirm: bool = False, no_verify: bool = False):
         """Create a commit with the given message.
 
         ignore_empty: If the diff is empty, don't create a commit instead of failing.
@@ -342,7 +342,14 @@ class Project:
             util.confirm(
                 click.style("==== Please verify the diff is correct ====", fg="green")
             )
-        self.run_git("commit", "-m", message)
+        cmd = [
+            "commit",
+            "-m",
+            message,
+        ]
+        if no_verify:
+            cmd.append("--no-verify")
+        self.run_git(*cmd)
 
     def push(self, set_upstream: bool = False):
         """Push the current ref to the given remote."""
@@ -416,7 +423,7 @@ class Project:
 
     def bump_version(self, version: Version):
         self.run_command("script/bump-version.py", str(version))
-        self.commit(f"Bump version to {version}")
+        self.commit(f"Bump version to {version}", no_verify=True)
 
     def prs_between(self, base: BranchType, head: BranchType) -> List[int]:
         base = self.lookup_branch(base)
