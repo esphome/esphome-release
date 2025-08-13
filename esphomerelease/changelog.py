@@ -13,7 +13,7 @@ from .util import gprint, process_asynchronously
 # one of these labels is applied
 LABEL_HEADERS = {
     "new-feature": "New Features",
-    "new-integration": "New Components",
+    "new-component": "New Components",
     "new-platform": "New Platforms",
     "breaking-change": "Breaking Changes",
     "cherry-picked": "Beta Changes",
@@ -22,7 +22,7 @@ LABEL_HEADERS = {
 
 LINE_LABELS = [
     "new-feature",
-    "new-integration",
+    "new-component",
     "new-platform",
     "breaking-change",
     "notable-change",
