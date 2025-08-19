@@ -11,17 +11,26 @@ from .project import EsphomeDocsProject
 # cache so next runs takes less time.
 USERS_CACHE_FILE = "users_cache.json"
 
+MAX_RETRIES = 5
+
 
 def add_repo_contribs(session, contribs: list[str], repo):
-    repo = session.repository("esphome", repo)
-    repo_contribs = repo.contributors()
+    attempts = 0
+    exception_message = ""
+    while attempts < MAX_RETRIES:
+        try:
+            repo = session.repository("esphome", repo)
+            repo_contribs = repo.contributors()
+            for c in repo_contribs:
+                if c.login not in contribs:
+                    contribs.append(c.login)
+        except Exception as e:
+            attempts += 1
+            exception_message = str(e)
+        else:
+            return
 
-    try:
-        for c in repo_contribs:
-            if c.login not in contribs:
-                contribs.append(c.login)
-    except Exception as e:
-        print(f"Error getting contributors from {repo.name}: {e}")
+    print(f"Error getting contributors from {repo.name}: {exception_message}")
 
 
 def gen_supporters():
