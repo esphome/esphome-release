@@ -387,12 +387,7 @@ class Project:
         branch = self.lookup_branch(branch)
 
         if self.does_branch_exist(branch):
-            if click.confirm(
-                f"Branch {branch} already exists. Delete first?", default=True
-            ):
-                self.run_git("branch", "-D", branch)
-            else:
-                return
+            self.run_git("branch", "-D", branch)
         self.run_git("checkout", "-b", branch)
 
     def checkout_push(self, branch: BranchType):
