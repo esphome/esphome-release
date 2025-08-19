@@ -139,7 +139,7 @@ def _docs_update_supporters(*, version: Version):
     gprint("Updating supporters")
     with EsphomeDocsProject.workon(branch_name):
         docs.gen_supporters()
-        EsphomeDocsProject.commit(f"Update supporters for {version}")
+        EsphomeDocsProject.commit(f"Update supporters for {version}", ignore_empty=True)
 
 
 def cut_beta_release(version: Version):
