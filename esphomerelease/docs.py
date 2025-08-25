@@ -34,7 +34,7 @@ def add_repo_contribs(session, contribs: list[str], repo):
 
 
 def gen_supporters():
-    with open("supporters.template.rst", "r", encoding="utf-8") as f:
+    with open("supporters.template.md", "r", encoding="utf-8") as f:
         template = f.read()
 
     sess = get_session()
@@ -70,12 +70,12 @@ def gen_supporters():
 
     for c in sorted_users:
         name = usernames[c] or c
-        contribs_lines.append(f"- `{name} (@{c}) <https://github.com/{c}>`__")
+        contribs_lines.append(f"- [{name.strip()} (@{c})](https://github.com/{c})")
 
     with open(USERS_CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(sorted_users, f, indent=2)
 
-    output_filename = EsphomeDocsProject.path / "guides" / "supporters.rst"
+    output_filename = EsphomeDocsProject.path / "content" / "guides" / "supporters.md"
 
     template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
 
