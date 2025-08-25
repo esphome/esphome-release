@@ -64,9 +64,6 @@ def reset():
 
 
 @cli.command(help="Generate release notes.")
-@click.option(
-    "--markdown", is_flag=True, default=False, help="Use markdown instead of RST."
-)
 @click.option("--with-sections/--without-sections", help="Add sections", default=False)
 @click.option(
     "--include-author/--dont-include-author",
@@ -78,7 +75,7 @@ def reset():
 @click.option("--head-ref", default=None, help="Head version")
 @click.option("--head-version", default=None, help="Head version")
 def release_notes(
-    markdown, with_sections, include_author, base_ref, head_ref, head_version
+    with_sections, include_author, base_ref, head_ref, head_version
 ):
     if base_ref is None:
         base_str = click.prompt(
@@ -126,7 +123,6 @@ def release_notes(
         head=head_ref,
         head_version=head_version,
         prerelease=head_version.beta > 0,
-        markdown=markdown,
         with_sections=with_sections,
         include_author=include_author,
     )
@@ -185,10 +181,10 @@ def count_lines():
     gprint("Esphome .tcc: {}", tcc)
     py = count_folder(EsphomeProject.path / "esphome", "*.py")
     gprint("Esphome .py: {}", py)
-    yaml_rst = count_folder(EsphomeDocsProject.path, "*.rst")
-    gprint("Esphomedocs .rst: {}", yaml_rst)
+    yaml_md = count_folder(EsphomeDocsProject.path, "*.md")
+    gprint("Esphomedocs .md: {}", yaml_md)
 
-    total = cpp + h + tcc + py + yaml_rst
+    total = cpp + h + tcc + py + yaml_md
     gprint("Total: {}", total)
 
 

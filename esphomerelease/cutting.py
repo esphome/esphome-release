@@ -58,7 +58,7 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             head=branch_name,
             head_version=version,
             prerelease=target_branch == Branch.BETA,
-            markdown=True,
+            gh_release=True,
             with_sections=True,
             # Don't include author to not spam everybody for release PRs
             include_author=False,
@@ -105,7 +105,6 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             head=branch_name,
             head_version=version,
             prerelease=version.beta > 0,
-            markdown=False,
             with_sections=version.beta <= 1,
         )
 
@@ -259,7 +258,7 @@ def _publish_release(
             head=_bump_branch_name(version),
             head_version=version,
             prerelease=prerelease,
-            markdown=True,
+            gh_release=True,
             with_sections=(version.patch == 0 and version.beta == 0),
         )
         _merge_release_pr(proj=proj, version=version, head_branch=head_branch)

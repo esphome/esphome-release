@@ -33,29 +33,17 @@ DEPENDENCY_LABELS = [
 ]
 
 
-def format_heading(title: str, markdown: bool, level: int = 2):
-    if markdown:
-        c = level * "#"
-        return f"{c} {title}\n"
-    else:
-        prefix = {
-            1: "=",
-            2: "-",
-            3: "^",
-        }[level]
-        return f"{title}\n{len(title) * prefix}\n"
+def format_heading(title: str, *, level: int = 2):
+    c = level * "#"
+    return f"{c} {title}\n"
 
 
 def format_line(
-    *, project: Project, pr: PullRequest, markdown: bool, include_author: bool
+    *, project: Project, pr: PullRequest, include_author: bool
 ) -> str:
     username = pr.user.login
-    if markdown:
-        pr_link = f"[{project.shortname}#{pr.number}]({pr.html_url})"
-        user_link = f"[@{username}]({pr.user.html_url})"
-    else:
-        pr_link = f":{project.shortname}pr:`{pr.number}`"
-        user_link = f":ghuser:`{username}`"
+    pr_link = f"[{project.shortname}#{pr.number}]({pr.html_url})"
+    user_link = f"[@{username}]({pr.user.html_url})"
 
     line = f"- {pr.title} {pr_link}"
     if include_author:
@@ -71,7 +59,7 @@ def generate(
     head: BranchType,
     head_version: Version,
     prerelease: bool,
-    markdown: bool = False,
+    gh_release: bool = False,
     with_sections: bool = True,
     include_author: bool = True,
 ):
@@ -125,7 +113,7 @@ def generate(
     for pr, labels in lines:
         parts = [
             format_line(
-                project=project, pr=pr, markdown=markdown, include_author=include_author
+                project=project, pr=pr, include_author=include_author
             )
         ]
         parts += [f"({label})" for label in labels if label in LINE_LABELS]
@@ -147,14 +135,14 @@ def generate(
             and not head_version.beta
         ):
             # Add header for patch releases
-            if not markdown:
+            if not gh_release:
                 now = datetime.now()
                 heading = format_heading(
-                    f"Release {head_version} - {now:%B} {now.day}", False
+                    f"Release {head_version} - {now:%B} {now.day}"
                 )
                 outp.append(heading)
         else:
-            heading = format_heading("Full list of changes", markdown)
+            heading = format_heading("Full list of changes")
             outp.append(heading)
             # For non-patch releases, insert header groups
             for label, title in LABEL_HEADERS.items():
@@ -164,28 +152,24 @@ def generate(
                 if not prs:
                     continue
 
-                heading = format_heading(title, markdown, level=3)
+                heading = format_heading(title, level=3)
                 outp.append(heading)
 
                 outp.extend(prs)
                 # add newline
                 outp.append("")
 
-            heading = format_heading("All changes", markdown, level=3)
+            heading = format_heading("All changes", level=3)
             outp.append(heading)
 
-    if with_sections:
-        if markdown:
-            outp.append("<details>")
-            outp.append("<summary>Show</summary>")
-            outp.append("")
-            outp.extend(changes)
-            outp.append("</details>")
-        else:
-            outp.append(".. collapse:: Show")
-            outp.append("    :open:")
-            outp.append("")
-            outp.extend([f"    {pr_line}" for pr_line in changes])
+    if with_sections and not gh_release:
+        outp.append("<details>")
+        outp.append("<summary></summary>")
+        outp.append("")
+        outp.append("<div>")
+        outp.extend(changes)
+        outp.append("</div>")
+        outp.append("</details>")
     else:
         outp.extend(changes)
     outp.append("")
@@ -198,18 +182,11 @@ def generate(
             for pr in prs
         ]
         if depdendency_prs:
-            heading = format_heading("Dependency Changes", markdown, level=3)
-            outp.append(heading)
-            if markdown:
-                outp.append("<details>")
-                outp.append("<summary>Show</summary>")
-                outp.append("")
-                outp.extend(depdendency_prs)
-                outp.append("</details>")
-            else:
-                outp.append(".. collapse:: Show")
-                outp.append("")
-                outp.extend([f"    {pr_line}" for pr_line in depdendency_prs])
-                outp.append("")
+            heading = format_heading("Dependency Changes", level=3)
+            outp.append("<details>")
+            outp.append("<summary>Show</summary>")
+            outp.append("")
+            outp.extend(depdendency_prs)
+            outp.append("</details>")
 
     return "\n".join(outp)
