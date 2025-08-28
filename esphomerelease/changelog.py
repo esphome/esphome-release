@@ -166,9 +166,8 @@ def generate(
         outp.append("<details>")
         outp.append("<summary></summary>")
         outp.append("")
-        outp.append("<div>")
         outp.extend(changes)
-        outp.append("</div>")
+        outp.append("")
         outp.append("</details>")
     else:
         outp.extend(changes)
