@@ -98,7 +98,7 @@ def _prompt_base_version() -> Version:
 def _docs_insert_changelog(*, version: Version, base: Version):
     branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
-        changelog_rst = changelog.generate(
+        changelog_md = changelog.generate(
             project=EsphomeProject,
             base=f"{base}",
             base_version=base,
@@ -111,18 +111,18 @@ def _docs_insert_changelog(*, version: Version, base: Version):
         from sys import platform
 
         if platform == "darwin":
-            copy_clipboard(changelog_rst)
+            copy_clipboard(changelog_md)
             gprint("Changelog has been copied to your clipboard. Please paste it in.")
         else:
             # Alternative where pbcopy does not work
             gprint("Start Changelog:")
-            print(changelog_rst)
+            print(changelog_md)
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = (
-            EsphomeDocsProject.path / "changelog" / f"{changelog_version}.rst"
+            EsphomeDocsProject.path / "content" / "changelog" / f"{changelog_version}.md"
         )
-        changelog_index_path = EsphomeDocsProject.path / "changelog" / "index.rst"
+        changelog_index_path = EsphomeDocsProject.path / "content" / "changelog" / "_index.md"
         open_vscode(str(changelog_path))
         message = "Pasted changelog"
         if version.beta == 1:
