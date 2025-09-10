@@ -186,6 +186,7 @@ def generate(
             outp.append("<summary></summary>")
             outp.append("")
             outp.extend(depdendency_prs)
+            outp.append("")
             outp.append("</details>")
 
     return "\n".join(outp)
