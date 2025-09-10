@@ -183,7 +183,7 @@ def generate(
         if depdendency_prs:
             heading = format_heading("Dependency Changes", level=3)
             outp.append("<details>")
-            outp.append("<summary>Show</summary>")
+            outp.append("<summary></summary>")
             outp.append("")
             outp.extend(depdendency_prs)
             outp.append("</details>")
