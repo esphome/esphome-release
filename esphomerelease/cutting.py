@@ -87,10 +87,10 @@ def _mark_cherry_picked(cherry_picked):
         picked.add_labels("cherry-picked")
 
 
-def _prompt_base_version() -> Version:
+def _prompt_base_version(*, include_prereleases: bool = False) -> Version:
     base_str = click.prompt(
         "Please enter base (what release to compare with for changelog)",
-        default=str(EsphomeProject.latest_release()),
+        default=str(EsphomeProject.latest_release(include_prereleases=include_prereleases)),
     )
     return Version.parse(base_str)
 
@@ -145,7 +145,7 @@ def cut_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _prompt_base_version()
+    base = _prompt_base_version(include_prereleases=version.beta != 1)
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -187,7 +187,7 @@ def cut_release(version: Version):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _prompt_base_version()
+    base = _prompt_base_version(include_prereleases=False)
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -271,7 +271,7 @@ def publish_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _prompt_base_version()
+    base = _prompt_base_version(include_prereleases=version.beta != 1)
     _publish_release(
         version=version, base=base, head_branch=Branch.BETA, prerelease=True
     )
@@ -286,7 +286,7 @@ def publish_release(version: Version):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _prompt_base_version()
+    base = _prompt_base_version(include_prereleases=False)
     _publish_release(
         version=version, base=base, head_branch=Branch.STABLE, prerelease=False
     )
