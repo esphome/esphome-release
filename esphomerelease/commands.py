@@ -25,7 +25,7 @@ def cli(step):
 
 @cli.command(help="Cut a release.")
 @click.argument("version")
-def cut_release(version):
+def cut(version):
     version = Version.parse(version)
     if version.beta:
         cutting.cut_beta_release(version)
@@ -35,7 +35,7 @@ def cut_release(version):
 
 @cli.command(help="Publish a release.")
 @click.argument("version")
-def publish_release(version):
+def publish(version):
     version = Version.parse(version)
     if version.beta:
         cutting.publish_beta_release(version)

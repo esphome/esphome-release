@@ -81,32 +81,32 @@ Install with `pip3 install -e .` (preferably in a venv)
 
 To create a release, do:
 
- - `esphomerelease cut-release {version}` - cuts the release and creates PRs in the esphome repos
+ - `esphomerelease cut {version}` - cuts the release and creates PRs in the esphome repos
  - Merge the PRs the step above created.
- - `esphomerelease publish-release {version}` - creates a tag and publishes the release.
+ - `esphomerelease publish {version}` - creates a tag and publishes the release.
 
 For example some releases for 1.15 could look like this:
 
 ```bash
-$ esphomerelease cut-release 1.15.0b1
+$ esphomerelease cut 1.15.0b1
 # Check the PRs (auto opened in browser)
-$ esphomerelease publish-release 1.15.0b1
+$ esphomerelease publish 1.15.0b1
 
 # To create release 1.15.0b2:
 # Add PRs to the `1.15.0b2` milestone that was automatically created.
 # Then run
-$ esphomerelease cut-release 1.15.0b2
+$ esphomerelease cut 1.15.0b2
 # Check release PRs
-$ esphomerelease publish-release 1.15.0b2
+$ esphomerelease publish 1.15.0b2
 
 # Now we want to publish 1.15.0
-$ esphomerelease cut-release 1.15.0
+$ esphomerelease cut 1.15.0
 # Check release PRs
-$ esphomerelease publish-release 1.15.0
+$ esphomerelease publish 1.15.0
 
 # Now create a patch release 1.15.1
 # Once again add PRs to the milestone 1.15.1, then perform these steps:
-$ esphomerelease cut-release 1.15.1
+$ esphomerelease cut 1.15.1
 # Check release PRs
-$ esphomerelease publish-release 1.15.1
+$ esphomerelease publish 1.15.1
 ```
