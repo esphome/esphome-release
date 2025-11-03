@@ -13,6 +13,10 @@ USERS_CACHE_FILE = "users_cache.json"
 
 MAX_RETRIES = 5
 
+REPO_CONTRIBS_IGNORE = [
+    "backlog",
+]
+
 
 def add_repo_contribs(session, contribs: list[str], repo):
     attempts = 0
@@ -50,6 +54,8 @@ def gen_supporters():
     orgs = sess.organization("esphome")
 
     for r in orgs.repositories():
+        if r.name in REPO_CONTRIBS_IGNORE:
+            continue
         add_repo_contribs(sess, contribs, r.name)
 
     contribs_lines = []
