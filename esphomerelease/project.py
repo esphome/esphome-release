@@ -418,7 +418,7 @@ class Project:
 
     def bump_version(self, version: Version):
         self.run_command("script/bump-version.py", str(version))
-        self.commit(f"Bump version to {version}", no_verify=True)
+        self.commit(f"Bump version to {version}", no_verify=True, ignore_empty=True)
 
     def prs_between(self, base: BranchType, head: BranchType) -> List[int]:
         base = self.lookup_branch(base)
