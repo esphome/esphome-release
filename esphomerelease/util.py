@@ -26,7 +26,7 @@ def copy_clipboard(text):
 
 
 def open_vscode(*paths):
-    subprocess.run(["code", *paths])
+    subprocess.run([CONFIG.get("editor", "code"), *paths])
 
 
 def gprint(s, *args, fg="green"):

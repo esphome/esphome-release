@@ -1,4 +1,5 @@
 {
+  "editor": "code",
   "github_token": "<INSERT_YOUR_TOKEN>",
   "esphome_path": "../esphome",
   "esphome_docs_path": "../esphome-docs",
