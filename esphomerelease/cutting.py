@@ -260,11 +260,11 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
 
 
 def _publish_release(
-    *, version: Version, base: Version, head_branch: BranchType, prerelease: bool
+    *, version: Version, base: Version, head_branch: BranchType, prerelease: bool, projects: list[Project]
 ):
     update_local_copies()
     confirm(f"Publish version {version}?")
-    for proj in [EsphomeProject, EsphomeDocsProject]:
+    for proj in projects:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
         is_first_beta = version.beta == 1
         is_first_main_release = version.patch == 0 and version.beta == 0
@@ -296,30 +296,30 @@ def _publish_release(
             proj.create_release(version, prerelease=prerelease, body=changelog_md)
 
 
-def publish_beta_release(version: Version):
+def publish_beta_release(version: Version, projects: list[Project]):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
     base = _prompt_base_version(include_prereleases=version.beta != 1)
     _publish_release(
-        version=version, base=base, head_branch=Branch.BETA, prerelease=True
+        version=version, base=base, head_branch=Branch.BETA, prerelease=True, projects=projects
     )
-    for proj in [EsphomeProject, EsphomeDocsProject]:
+    for proj in projects:
         with proj.workon(Branch.DEV):
             proj.pull()
             proj.merge(Branch.BETA, "ours")
             proj.push()
 
 
-def publish_release(version: Version):
+def publish_release(version: Version, projects: list[Project]):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
     base = _prompt_base_version(include_prereleases=False)
     _publish_release(
-        version=version, base=base, head_branch=Branch.STABLE, prerelease=False
+        version=version, base=base, head_branch=Branch.STABLE, prerelease=False, projects=projects
     )
-    for proj in [EsphomeProject, EsphomeDocsProject]:
+    for proj in projects:
         with proj.workon(Branch.BETA):
             proj.pull()
             proj.merge(Branch.STABLE, "ours")

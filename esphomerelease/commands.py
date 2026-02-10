@@ -11,7 +11,7 @@ from .config import CONFIG
 from .docs import gen_supporters
 from .github import get_session
 from .model import Branch, Version
-from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject
+from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject, Project
 from .util import confirm, copy_clipboard, gprint
 
 
@@ -35,12 +35,26 @@ def cut(version):
 
 @cli.command(help="Publish a release.")
 @click.argument("version")
-def publish(version):
+@click.option("--code", is_flag=True, default=False, help="Only publish code")
+@click.option("--docs", is_flag=True, default=False, help="Only publish docs")
+def publish(version: str, code: bool, docs: bool):
+    # If neither flag is specified, publish both
+    if not code and not docs:
+        code = True
+        docs = True
+
+    # Build list of projects based on flags
+    projects: list[Project] = []
+    if code:
+        projects.append(EsphomeProject)
+    if docs:
+        projects.append(EsphomeDocsProject)
+
     version = Version.parse(version)
     if version.beta:
-        cutting.publish_beta_release(version)
+        cutting.publish_beta_release(version, projects=projects)
     else:
-        cutting.publish_release(version)
+        cutting.publish_release(version, projects=projects)
 
 
 @cli.command(help="Reset branches to their upstream versions.")
