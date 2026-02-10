@@ -71,7 +71,7 @@ The same is repeated for the docs repo but again with different branch names.
 
 The Home Assistant Add-On also needs to be updated with the latest version (this is currently done on the maintainer side, in the future this could be automatic with webhooks).
 
-Run `script/bump-version.py [--beta] [--stable]` in the https://github.com/esphome/hassio/ repository.
+Run `script/bump-version.py [--beta] [--stable]` in the https://github.com/esphome/home-assistant-addon repository.
 
 Push the change, and tag the release `v{version}` in the GitHub releases interface.
 
