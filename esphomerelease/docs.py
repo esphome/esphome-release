@@ -81,7 +81,7 @@ def gen_supporters():
     with open(USERS_CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(sorted_users, f, indent=2)
 
-    output_filename = EsphomeDocsProject.path / "content" / "guides" / "supporters.md"
+    output_filename = EsphomeDocsProject.path / "src" / "content" / "docs" / "guides" / "supporters.mdx"
 
     template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
 

@@ -134,16 +134,10 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = (
-            EsphomeDocsProject.path / "content" / "changelog" / f"{changelog_version}.md"
+            EsphomeDocsProject.path / "src" / "content" / "docs" / "changelog" / f"{changelog_version}.mdx"
         )
-        changelog_index_path = EsphomeDocsProject.path / "content" / "changelog" / "_index.md"
         open_vscode(str(changelog_path))
-        message = "Pasted changelog"
-        if version.beta == 1:
-            open_vscode(str(changelog_index_path))
-            message += " and updated index"
-        message += "?"
-        confirm(message)
+        confirm("Pasted changelog?")
         EsphomeDocsProject.commit(f"Update changelog for {version}")
 
 
