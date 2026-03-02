@@ -1,5 +1,6 @@
 import glob
 import json
+from pathlib import Path
 from typing import List
 
 import click
@@ -12,7 +13,34 @@ from .docs import gen_supporters
 from .github import get_session
 from .model import Branch, Version
 from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject, Project
-from .util import confirm, copy_clipboard, gprint
+from .util import confirm, copy_clipboard, execute_command, gprint
+
+USERS_CACHE_FILE = "users_cache.json"
+
+
+def _commit_user_cache_if_changed():
+    repo_root = Path(__file__).resolve().parents[1]
+    status = execute_command(
+        "git",
+        "status",
+        "--porcelain",
+        USERS_CACHE_FILE,
+        cwd=str(repo_root),
+        silent=True,
+        fail_ok=True,
+    ).decode().strip()
+    if not status:
+        return
+
+    execute_command("git", "add", USERS_CACHE_FILE, cwd=str(repo_root))
+    execute_command(
+        "git",
+        "commit",
+        "-m",
+        "Update user cache",
+        cwd=str(repo_root),
+    )
+    execute_command("git", "push", cwd=str(repo_root))
 
 
 @click.group()
@@ -31,6 +59,8 @@ def cut(version):
         cutting.cut_beta_release(version)
     else:
         cutting.cut_release(version)
+
+    _commit_user_cache_if_changed()
 
 
 @cli.command(help="Publish a release.")
