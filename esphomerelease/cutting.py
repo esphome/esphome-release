@@ -57,7 +57,8 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
         if proj == EsphomeProject and (is_first_beta or is_first_main_release):
             gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
             changelog_version = version.replace(patch=0, beta=0, dev=False)
-            changelog_md = f"https://esphome.io/changelog/{changelog_version}.html"
+            domain = "beta.esphome.io" if version.beta else "esphome.io"
+            changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
         else:
             changelog_md = changelog.generate(
                 project=proj,
@@ -76,7 +77,8 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             if len(changelog_md) > 65000:
                 gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
                 changelog_version = version.replace(patch=0, beta=0, dev=False)
-                changelog_md = f"https://esphome.io/changelog/{changelog_version}.html"
+                domain = "beta.esphome.io" if version.beta else "esphome.io"
+                changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
 
         body = (
             "**Do not merge, release script will automatically merge**\n"
@@ -265,7 +267,8 @@ def _publish_release(
         if proj == EsphomeProject and (is_first_beta or is_first_main_release):
             gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
             changelog_version = version.replace(patch=0, beta=0, dev=False)
-            changelog_md = f"https://esphome.io/changelog/{changelog_version}.html"
+            domain = "beta.esphome.io" if version.beta else "esphome.io"
+            changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
         else:
             changelog_md = changelog.generate(
                 project=proj,
@@ -282,7 +285,8 @@ def _publish_release(
             if len(changelog_md) > 65000:
                 gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
                 changelog_version = version.replace(patch=0, beta=0, dev=False)
-                changelog_md = f"https://esphome.io/changelog/{changelog_version}.html"
+                domain = "beta.esphome.io" if version.beta else "esphome.io"
+                changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
 
         _merge_release_pr(proj=proj, version=version, head_branch=head_branch)
         with proj.workon(head_branch):
