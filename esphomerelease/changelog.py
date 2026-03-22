@@ -106,6 +106,12 @@ def generate(
     # Sort log lines by when the PR was merged
     lines.sort(key=lambda x: x[0].merged_at)
 
+    is_patch = (
+        head_version is not None
+        and head_version.patch != 0
+        and not head_version.beta
+    )
+
     # A list of strings containing all serialized changes
     changes: List[str] = []
 
@@ -120,7 +126,7 @@ def generate(
 
         msg = " ".join(parts)
 
-        if not with_sections or not any(label in labels for label in DEPENDENCY_LABELS):
+        if not with_sections or is_patch or not any(label in labels for label in DEPENDENCY_LABELS):
             changes.append(msg)
 
         for label in labels:
@@ -173,7 +179,7 @@ def generate(
         outp.extend(changes)
     outp.append("")
 
-    if with_sections:
+    if with_sections and not is_patch:
         depdendency_prs = [
             pr
             for label, prs in label_groups.items()
