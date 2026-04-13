@@ -55,7 +55,9 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
         is_first_beta = version.beta == 1
         is_first_main_release = version.patch == 0 and version.beta == 0
         if proj == EsphomeProject and (is_first_beta or is_first_main_release):
-            gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
+            gprint(
+                f"Using website link for {proj.shortname} changelog (first beta/main release)"
+            )
             changelog_version = version.replace(patch=0, beta=0, dev=False)
             domain = "beta.esphome.io" if version.beta else "esphome.io"
             changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
@@ -75,7 +77,9 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 
             # If changelog is too long, replace with a link to website
             if len(changelog_md) > 65000:
-                gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
+                gprint(
+                    f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
+                )
                 changelog_version = version.replace(patch=0, beta=0, dev=False)
                 domain = "beta.esphome.io" if version.beta else "esphome.io"
                 changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
@@ -106,7 +110,9 @@ def _mark_cherry_picked(cherry_picked):
 def _prompt_base_version(*, include_prereleases: bool = False) -> Version:
     base_str = click.prompt(
         "Please enter base (what release to compare with for changelog)",
-        default=str(EsphomeProject.latest_release(include_prereleases=include_prereleases)),
+        default=str(
+            EsphomeProject.latest_release(include_prereleases=include_prereleases)
+        ),
     )
     return Version.parse(base_str)
 
@@ -136,7 +142,12 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             gprint("End Changelog, Please copy and paste changelog")
         changelog_version = version.replace(patch=0, beta=0, dev=False)
         changelog_path = (
-            EsphomeDocsProject.path / "src" / "content" / "docs" / "changelog" / f"{changelog_version}.mdx"
+            EsphomeDocsProject.path
+            / "src"
+            / "content"
+            / "docs"
+            / "changelog"
+            / f"{changelog_version}.mdx"
         )
         open_vscode(str(changelog_path))
         confirm("Pasted changelog?")
@@ -237,7 +248,7 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
         gprint("Found multiple release PRs. Please select the matchin one")
         for i, pr in enumerate(prs, start=1):
             gprint(f" [{i}] #{pr.number} by @{pr.user.login} ({pr.html_url})")
-        gprint(f" [{len(prs)+1}] Auto-merge none")
+        gprint(f" [{len(prs) + 1}] Auto-merge none")
         num = (
             int(
                 click.prompt(
@@ -256,7 +267,12 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
 
 
 def _publish_release(
-    *, version: Version, base: Version, head_branch: BranchType, prerelease: bool, projects: list[Project]
+    *,
+    version: Version,
+    base: Version,
+    head_branch: BranchType,
+    prerelease: bool,
+    projects: list[Project],
 ):
     update_local_copies()
     confirm(f"Publish version {version}?")
@@ -265,7 +281,9 @@ def _publish_release(
         is_first_beta = version.beta == 1
         is_first_main_release = version.patch == 0 and version.beta == 0
         if proj == EsphomeProject and (is_first_beta or is_first_main_release):
-            gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
+            gprint(
+                f"Using website link for {proj.shortname} changelog (first beta/main release)"
+            )
             changelog_version = version.replace(patch=0, beta=0, dev=False)
             domain = "beta.esphome.io" if version.beta else "esphome.io"
             changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
@@ -283,7 +301,9 @@ def _publish_release(
 
             # If changelog is too long, replace with a link to website
             if len(changelog_md) > 65000:
-                gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
+                gprint(
+                    f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
+                )
                 changelog_version = version.replace(patch=0, beta=0, dev=False)
                 domain = "beta.esphome.io" if version.beta else "esphome.io"
                 changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
@@ -300,7 +320,11 @@ def publish_beta_release(version: Version, projects: list[Project]):
 
     base = _prompt_base_version(include_prereleases=version.beta != 1)
     _publish_release(
-        version=version, base=base, head_branch=Branch.BETA, prerelease=True, projects=projects
+        version=version,
+        base=base,
+        head_branch=Branch.BETA,
+        prerelease=True,
+        projects=projects,
     )
     for proj in projects:
         with proj.workon(Branch.DEV):
@@ -315,7 +339,11 @@ def publish_release(version: Version, projects: list[Project]):
 
     base = _prompt_base_version(include_prereleases=False)
     _publish_release(
-        version=version, base=base, head_branch=Branch.STABLE, prerelease=False, projects=projects
+        version=version,
+        base=base,
+        head_branch=Branch.STABLE,
+        prerelease=False,
+        projects=projects,
     )
     for proj in projects:
         with proj.workon(Branch.BETA):

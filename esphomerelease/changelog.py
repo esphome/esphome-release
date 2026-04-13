@@ -38,9 +38,7 @@ def format_heading(title: str, *, level: int = 2):
     return f"{c} {title}\n"
 
 
-def format_line(
-    *, project: Project, pr: PullRequest, include_author: bool
-) -> str:
+def format_line(*, project: Project, pr: PullRequest, include_author: bool) -> str:
     username = pr.user.login
     pr_link = f"[{project.shortname}#{pr.number}]({pr.html_url})"
     user_link = f"[@{username}]({pr.user.html_url})"
@@ -107,9 +105,7 @@ def generate(
     lines.sort(key=lambda x: x[0].merged_at)
 
     is_patch = (
-        head_version is not None
-        and head_version.patch != 0
-        and not head_version.beta
+        head_version is not None and head_version.patch != 0 and not head_version.beta
     )
 
     # A list of strings containing all serialized changes
@@ -117,16 +113,16 @@ def generate(
 
     # Now go through the lines struct and serialize them
     for pr, labels in lines:
-        parts = [
-            format_line(
-                project=project, pr=pr, include_author=include_author
-            )
-        ]
+        parts = [format_line(project=project, pr=pr, include_author=include_author)]
         parts += [f"({label})" for label in labels if label in LINE_LABELS]
 
         msg = " ".join(parts)
 
-        if not with_sections or is_patch or not any(label in labels for label in DEPENDENCY_LABELS):
+        if (
+            not with_sections
+            or is_patch
+            or not any(label in labels for label in DEPENDENCY_LABELS)
+        ):
             changes.append(msg)
 
         for label in labels:
@@ -143,9 +139,7 @@ def generate(
             # Add header for patch releases
             if not gh_release:
                 now = datetime.now()
-                heading = format_heading(
-                    f"Release {head_version} - {now:%B} {now.day}"
-                )
+                heading = format_heading(f"Release {head_version} - {now:%B} {now.day}")
                 outp.append(heading)
         else:
             heading = format_heading("Full list of changes")

@@ -40,13 +40,20 @@ def run_gh_command(args: list[str]) -> str:
 
 def get_open_docs_prs() -> list[dict]:
     """Get all open PRs from esphome-docs repo."""
-    output = run_gh_command([
-        "pr", "list",
-        "--repo", "esphome/esphome-docs",
-        "--state", "open",
-        "--limit", "500",
-        "--json", "number,title,url,body"
-    ])
+    output = run_gh_command(
+        [
+            "pr",
+            "list",
+            "--repo",
+            "esphome/esphome-docs",
+            "--state",
+            "open",
+            "--limit",
+            "500",
+            "--json",
+            "number,title,url,body",
+        ]
+    )
     return json.loads(output)
 
 
@@ -63,11 +70,11 @@ def extract_esphome_pr_numbers(body: str) -> list[int]:
     pr_numbers = set()
 
     # Pattern 1: esphome/esphome#NUMBER
-    for match in re.finditer(r'esphome/esphome#(\d+)', body):
+    for match in re.finditer(r"esphome/esphome#(\d+)", body):
         pr_numbers.add(int(match.group(1)))
 
     # Pattern 2: https://github.com/esphome/esphome/pull/NUMBER
-    for match in re.finditer(r'github\.com/esphome/esphome/pull/(\d+)', body):
+    for match in re.finditer(r"github\.com/esphome/esphome/pull/(\d+)", body):
         pr_numbers.add(int(match.group(1)))
 
     return sorted(pr_numbers)
@@ -76,11 +83,17 @@ def extract_esphome_pr_numbers(body: str) -> list[int]:
 def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
     """Get the state of an esphome PR."""
     try:
-        output = run_gh_command([
-            "pr", "view", str(pr_number),
-            "--repo", "esphome/esphome",
-            "--json", "state,mergedAt,title"
-        ])
+        output = run_gh_command(
+            [
+                "pr",
+                "view",
+                str(pr_number),
+                "--repo",
+                "esphome/esphome",
+                "--json",
+                "state,mergedAt,title",
+            ]
+        )
         data = json.loads(output)
         return LinkedPR(
             number=pr_number,
@@ -116,12 +129,14 @@ def main():
                     has_merged = True
 
         if has_merged:
-            flagged_prs.append(DocsPR(
-                number=pr["number"],
-                title=pr["title"],
-                url=pr["url"],
-                linked_prs=linked_prs,
-            ))
+            flagged_prs.append(
+                DocsPR(
+                    number=pr["number"],
+                    title=pr["title"],
+                    url=pr["url"],
+                    linked_prs=linked_prs,
+                )
+            )
 
     if not flagged_prs:
         print("✅ No docs PRs found with merged esphome PRs")

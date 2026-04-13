@@ -20,15 +20,19 @@ USERS_CACHE_FILE = "users_cache.json"
 
 def _commit_user_cache_if_changed():
     repo_root = Path(__file__).resolve().parents[1]
-    status = execute_command(
-        "git",
-        "status",
-        "--porcelain",
-        USERS_CACHE_FILE,
-        cwd=str(repo_root),
-        silent=True,
-        fail_ok=True,
-    ).decode().strip()
+    status = (
+        execute_command(
+            "git",
+            "status",
+            "--porcelain",
+            USERS_CACHE_FILE,
+            cwd=str(repo_root),
+            silent=True,
+            fail_ok=True,
+        )
+        .decode()
+        .strip()
+    )
     if not status:
         return
 
@@ -118,9 +122,7 @@ def reset():
 @click.option("--base-ref", default=None, help="Base version")
 @click.option("--head-ref", default=None, help="Head version")
 @click.option("--head-version", default=None, help="Head version")
-def release_notes(
-    with_sections, include_author, base_ref, head_ref, head_version
-):
+def release_notes(with_sections, include_author, base_ref, head_ref, head_version):
     if base_ref is None:
         base_str = click.prompt(
             "Please enter base version", default=str(EsphomeProject.latest_release())
@@ -263,11 +265,17 @@ def labels():
         repo_labels: list[Label] = [label for label in repo.labels()]
         for comp in found_components:
             label_name = f"component: {comp.lower()}"
-            found_old_labels = [x for x in repo_labels if x.name.lower() == f"integration: {comp.lower()}"]
+            found_old_labels = [
+                x
+                for x in repo_labels
+                if x.name.lower() == f"integration: {comp.lower()}"
+            ]
             found_new_labels = any(x.name.lower() == label_name for x in repo_labels)
             if found_old_labels:
                 for found_old_label in found_old_labels:
-                    print(f"Updated label from {found_old_label.name} to '{label_name}' in {repo.name}")
+                    print(
+                        f"Updated label from {found_old_label.name} to '{label_name}' in {repo.name}"
+                    )
                     try:
                         found_old_label.update(name=label_name, color="ededed")
                     except Exception as e:
@@ -281,13 +289,21 @@ def labels():
             except Exception as e:
                 failed_to_create.setdefault(repo.name, []).append(label_name)
 
-        old_repo_labels = [label for label in repo_labels if label.name.startswith("integration: ")]
+        old_repo_labels = [
+            label for label in repo_labels if label.name.startswith("integration: ")
+        ]
         for old_label in old_repo_labels:
-            print(f"Updating label '{old_label.name}' in {repo.name} to 'component: {old_label.name[13:].lower()}'")
+            print(
+                f"Updating label '{old_label.name}' in {repo.name} to 'component: {old_label.name[13:].lower()}'"
+            )
             try:
-                old_label.update(name=f"component: {old_label.name[13:].lower()}", color="ededed")
+                old_label.update(
+                    name=f"component: {old_label.name[13:].lower()}", color="ededed"
+                )
             except Exception as e:
-                failed_to_update.setdefault(repo.name, []).append(f"component: {old_label.name[13:].lower()}")
+                failed_to_update.setdefault(repo.name, []).append(
+                    f"component: {old_label.name[13:].lower()}"
+                )
 
     if failed_to_update:
         print("Failed to update labels in the following repos:")
@@ -298,7 +314,6 @@ def labels():
         print("Failed to create labels in the following repos:")
         for repo_name, labels in failed_to_create.items():
             print(f"{repo_name}: {json.dumps(labels)}")
-
 
 
 @cli.command(help="Generate Supporters.")

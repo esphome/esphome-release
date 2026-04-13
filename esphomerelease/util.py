@@ -139,6 +139,7 @@ def checkout_dev():
     EsphomeProject.checkout("dev")
     EsphomeDocsProject.checkout("next")
 
+
 def confirm(text):
     while not click.confirm(text):
         pass

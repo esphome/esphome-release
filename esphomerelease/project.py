@@ -131,7 +131,7 @@ class Project:
             try:
                 pull = self.repo.pull_request(issue.number)
             except NotFoundError:
-                continue #issue, not pull request
+                continue  # issue, not pull request
 
             if not pull.is_merged():
                 log = click.style(
@@ -328,7 +328,13 @@ class Project:
         self.run_git(*command, on_fail=on_fail)
 
     # pylint: disable=redefined-outer-name
-    def commit(self, message: str, ignore_empty: bool = False, confirm: bool = False, no_verify: bool = False):
+    def commit(
+        self,
+        message: str,
+        ignore_empty: bool = False,
+        confirm: bool = False,
+        no_verify: bool = False,
+    ):
         """Create a commit with the given message.
 
         ignore_empty: If the diff is empty, don't create a commit instead of failing.
