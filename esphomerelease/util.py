@@ -113,10 +113,22 @@ def update_local_copies():
     """Update local repos to be up to date with remotes."""
     from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
 
-    if EsphomeProject.has_local_changes:
-        raise EsphomeReleaseError("Local changes in esphome repository!")
-    if EsphomeDocsProject.has_local_changes:
-        raise EsphomeReleaseError("Local changes in esphome-docs repository!")
+    for project in (EsphomeProject, EsphomeDocsProject):
+        if not project.has_local_changes:
+            continue
+        if not click.confirm(
+            click.style(
+                f"Local changes in {project.shortname} repository! "
+                "Discard them with `git reset --hard` and `git clean -fd`?",
+                fg="yellow",
+            ),
+            default=True,
+        ):
+            raise EsphomeReleaseError(
+                f"Aborted: local changes in {project.shortname} repository"
+            )
+        project.run_git("reset", "--hard", "HEAD")
+        project.run_git("clean", "-fd")
 
     gprint("Updating local repo copies")
     for branch in ["release", "dev", "beta"]:
