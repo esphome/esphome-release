@@ -27,6 +27,34 @@ def _bump_branch_name(version: Version) -> str:
     return f"bump-{version}"
 
 
+def _check_open_milestone_prs(version: Version):
+    """Check for open PRs on the milestones and prompt for confirmation."""
+    open_prs = []
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone = proj.get_milestone_by_title(str(version))
+        if milestone is None:
+            continue
+        prs = proj.get_open_prs_for_milestone(milestone)
+        for pr in prs:
+            open_prs.append((proj, pr))
+
+    if not open_prs:
+        return
+
+    gprint(click.style(
+        f"Warning: Found {len(open_prs)} open PR(s) on the {version} milestone:",
+        fg="yellow",
+    ))
+    for proj, pr in open_prs:
+        gprint(f"  - [{proj.shortname}] #{pr.number}: {pr.title} ({pr.html_url})")
+
+    if not click.confirm(
+        click.style("Continue cutting with open PRs on the milestone?", fg="yellow"),
+        default=False,
+    ):
+        raise EsphomeReleaseError("Aborted: open PRs on milestone")
+
+
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
     branch_name = _bump_branch_name(version)
 
@@ -167,6 +195,7 @@ def cut_beta_release(version: Version):
         raise EsphomeReleaseError("Must be beta release!")
 
     base = _prompt_base_version(include_prereleases=version.beta != 1)
+    _check_open_milestone_prs(version)
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -209,6 +238,7 @@ def cut_release(version: Version):
         raise EsphomeReleaseError("Must be full release!")
 
     base = _prompt_base_version(include_prereleases=False)
+    _check_open_milestone_prs(version)
     update_local_copies()
 
     # Commits that were cherry-picked

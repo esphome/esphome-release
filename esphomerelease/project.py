@@ -116,6 +116,20 @@ class Project:
     def create_milestone(self, title: str) -> Milestone:
         return self.repo.create_milestone(title)
 
+    def get_open_prs_for_milestone(self, milestone: Milestone) -> List[PullRequest]:
+        """Get all open PRs assigned to a milestone."""
+        if milestone is None:
+            return []
+
+        open_prs = []
+        for issue in self.repo.issues(milestone=milestone.number, state="open"):
+            try:
+                pull = self.repo.pull_request(issue.number)
+            except NotFoundError:
+                continue  # issue, not pull request
+            open_prs.append(pull)
+        return open_prs
+
     def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
 
