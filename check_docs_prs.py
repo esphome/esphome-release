@@ -62,10 +62,10 @@ def extract_esphome_pr_numbers(body: str) -> list[int]:
     if not body:
         return []
 
-    # Match patterns like:
-    # - esphome/esphome#12305
-    # - https://github.com/esphome/esphome/pull/12305
-    # - #12305 (in context of esphome repo references)
+    # Replace markdown links [text](url) with just the url, so link display
+    # text (e.g. a discussions link rendered as "esphome/esphome#3624") can't
+    # be mistaken for a real PR reference.
+    body = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\2', body)
 
     pr_numbers = set()
 
