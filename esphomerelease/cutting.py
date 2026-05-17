@@ -28,31 +28,31 @@ def _bump_branch_name(version: Version) -> str:
 
 
 def _check_open_milestone_prs(version: Version):
-    """Check for open PRs on the milestones and prompt for confirmation."""
-    open_prs = []
-    for proj in [EsphomeProject, EsphomeDocsProject]:
-        milestone = proj.get_milestone_by_title(str(version))
-        if milestone is None:
-            continue
-        prs = proj.get_open_prs_for_milestone(milestone)
-        for pr in prs:
-            open_prs.append((proj, pr))
+    """Check for open PRs on the milestones; loop until the milestone is clean or the user aborts."""
+    while True:
+        open_prs = []
+        for proj in [EsphomeProject, EsphomeDocsProject]:
+            milestone = proj.get_milestone_by_title(str(version))
+            if milestone is None:
+                continue
+            for pr in proj.get_open_prs_for_milestone(milestone):
+                open_prs.append((proj, pr))
 
-    if not open_prs:
-        return
+        if not open_prs:
+            return
 
-    gprint(click.style(
-        f"Warning: Found {len(open_prs)} open PR(s) on the {version} milestone:",
-        fg="yellow",
-    ))
-    for proj, pr in open_prs:
-        gprint(f"  - [{proj.shortname}] #{pr.number}: {pr.title} ({pr.html_url})")
+        gprint(click.style(
+            f"Warning: Found {len(open_prs)} open PR(s) on the {version} milestone:",
+            fg="yellow",
+        ))
+        for proj, pr in open_prs:
+            gprint(f"  - [{proj.shortname}] #{pr.number}: {pr.title} ({pr.html_url})")
 
-    if not click.confirm(
-        click.style("Continue cutting with open PRs on the milestone?", fg="yellow"),
-        default=False,
-    ):
-        raise EsphomeReleaseError("Aborted: open PRs on milestone")
+        if not click.confirm(
+            click.style("Check again?", fg="yellow"),
+            default=True,
+        ):
+            raise EsphomeReleaseError("Aborted: open PRs on milestone")
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
