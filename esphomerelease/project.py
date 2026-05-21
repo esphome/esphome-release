@@ -353,9 +353,9 @@ class Project:
 
         ignore_empty: If the diff is empty, don't create a commit instead of failing.
         """
-        if ignore_empty and not self.has_local_changes:
-            return
         self.run_git("add", ".")
+        if ignore_empty and not self._has_staged_changes():
+            return
         if confirm:
             gprint("=============== DIFF START ===============")
             self.run_git("diff", "--color", "--cached", show=True)
@@ -393,6 +393,15 @@ class Project:
         try:
             self.run_git(
                 "diff-index", "--quiet", "HEAD", "--", fail_ok=True, silent=True
+            )
+            return False
+        except EsphomeReleaseError:
+            return True
+
+    def _has_staged_changes(self) -> bool:
+        try:
+            self.run_git(
+                "diff", "--cached", "--quiet", fail_ok=True, silent=True
             )
             return False
         except EsphomeReleaseError:
