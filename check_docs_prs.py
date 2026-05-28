@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check all open PRs in esphome-docs for linked esphome PRs.
+Check all open PRs in esphome.io for linked esphome PRs.
 Flags docs PRs where the linked esphome PR has been merged.
 """
 
@@ -39,13 +39,13 @@ def run_gh_command(args: list[str]) -> str:
 
 
 def get_open_docs_prs() -> list[dict]:
-    """Get all open PRs from esphome-docs repo."""
+    """Get all open PRs from esphome.io repo."""
     output = run_gh_command(
         [
             "pr",
             "list",
             "--repo",
-            "esphome/esphome-docs",
+            "esphome/esphome.io",
             "--state",
             "open",
             "--limit",
@@ -106,7 +106,7 @@ def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
 
 
 def main():
-    print("Fetching open PRs from esphome-docs...")
+    print("Fetching open PRs from esphome.io...")
     docs_prs = get_open_docs_prs()
     print(f"Found {len(docs_prs)} open PRs\n")
 

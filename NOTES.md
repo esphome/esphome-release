@@ -52,7 +52,7 @@ All other stable releases:
   - Bump version on that branch to `{version}` using `script/bump-version.py` and commit.
   - Create a GitHub PR from `bump-{version}` to `release`.
 
-The same is repeated for `esphome-docs` with `s/dev/next/` and `s/release/current/`
+The same is repeated for `esphome.io` with `s/dev/next/` and `s/release/current/`
 
 ## PR Merging and Releasing
 
