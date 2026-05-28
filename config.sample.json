@@ -2,7 +2,7 @@
   "editor": "code",
   "github_token": "<INSERT_YOUR_TOKEN>",
   "esphome_path": "../esphome",
-  "esphome_docs_path": "../esphome-docs",
+  "esphome_io_path": "../esphome.io",
   "esphome_hassio_path": "../home-assistant-addon",
   "esphome_issues_path": "../issues",
   "esphome_feature_requests_path": "../feature-requests"

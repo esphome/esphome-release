@@ -477,8 +477,8 @@ EsphomeProject = Project(
     dev_branch="dev",
 )
 EsphomeDocsProject = Project(
-    repo_name="esphome-docs",
-    path=CONFIG["esphome_docs_path"],
+    repo_name="esphome.io",
+    path=CONFIG.get("esphome_io_path", CONFIG.get("esphome_docs_path")),
     shortname="docs",
     stable_branch="current",
     beta_branch="beta",

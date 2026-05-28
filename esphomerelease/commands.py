@@ -100,11 +100,11 @@ def reset():
     if click.confirm("Reset esphome/beta ?"):
         EsphomeProject.reset_hard_remote("beta")
 
-    if click.confirm("Reset esphome-docs/current ?"):
+    if click.confirm("Reset esphome.io/current ?"):
         EsphomeDocsProject.reset_hard_remote("current")
-    if click.confirm("Reset esphome-docs/next ?"):
+    if click.confirm("Reset esphome.io/next ?"):
         EsphomeDocsProject.reset_hard_remote("next")
-    if click.confirm("Reset esphome-docs/beta ?"):
+    if click.confirm("Reset esphome.io/beta ?"):
         EsphomeDocsProject.reset_hard_remote("beta")
 
     if click.confirm("Reset esphome-hassio/main ?"):
@@ -257,7 +257,7 @@ def labels():
         sess.repository("esphome", "issues"),
         sess.repository("esphome", "feature-requests"),
         sess.repository("esphome", "esphome"),
-        sess.repository("esphome", "esphome-docs"),
+        sess.repository("esphome", "esphome.io"),
     ]
     failed_to_update: dict[str, list[str]] = {}
     failed_to_create: dict[str, list[str]] = {}
