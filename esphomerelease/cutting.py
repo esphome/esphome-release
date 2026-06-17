@@ -1,5 +1,7 @@
 """Logic for cutting releases."""
 
+import datetime
+
 import click
 
 from . import changelog, docs
@@ -9,8 +11,11 @@ from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, P
 from .util import (
     confirm,
     copy_clipboard,
+    feature_freeze_date,
     gprint,
+    milestone_due_on,
     open_vscode,
+    release_date,
     update_local_copies,
 )
 
@@ -27,12 +32,27 @@ def _bump_branch_name(version: Version) -> str:
     return f"bump-{version}"
 
 
-def _check_open_milestone_prs(version: Version):
-    """Check for open PRs on the milestones; loop until the milestone is clean or the user aborts."""
+def _cycle_milestone_title(version: Version) -> str:
+    """Title of the single milestone shared by a whole release cycle.
+
+    Every beta and the final release of e.g. 2026.6.0 use the ``2026.6.0``
+    milestone; patch releases keep their own (``2026.6.1`` etc.).
+    """
+    return str(version.replace(beta=0, dev=False))
+
+
+def _check_open_milestone_prs(version: Version, *, block: bool):
+    """Check for open PRs on the cycle milestone.
+
+    Open PRs are always reported. When ``block`` is True (full releases) the
+    user must clear the milestone or abort; for betas this only warns and
+    continues.
+    """
+    milestone_title = _cycle_milestone_title(version)
     while True:
         open_prs = []
         for proj in [EsphomeProject, EsphomeDocsProject]:
-            milestone = proj.get_milestone_by_title(str(version))
+            milestone = proj.get_milestone_by_title(milestone_title)
             if milestone is None:
                 continue
             for pr in proj.get_open_prs_for_milestone(milestone):
@@ -42,11 +62,14 @@ def _check_open_milestone_prs(version: Version):
             return
 
         gprint(click.style(
-            f"Warning: Found {len(open_prs)} open PR(s) on the {version} milestone:",
+            f"Warning: Found {len(open_prs)} open PR(s) on the {milestone_title} milestone:",
             fg="yellow",
         ))
         for proj, pr in open_prs:
             gprint(f"  - [{proj.shortname}] #{pr.number}: {pr.title} ({pr.html_url})")
+
+        if not block:
+            return
 
         if not click.confirm(
             click.style("Check again?", fg="yellow"),
@@ -66,10 +89,32 @@ def _strategy_merge(project: Project, version: Version, *, base: Branch, head: B
 
 def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
     branch_name = _bump_branch_name(version)
-    milestone = project.get_milestone_by_title(str(version))
+    milestone = project.get_milestone_by_title(_cycle_milestone_title(version))
 
     project.checkout(base)
     project.checkout_new_branch(branch_name)
+    ret = project.cherry_pick_from_milestone(milestone)
+    project.bump_version(version)
+    return ret
+
+
+def _strategy_merge_then_cherry_pick(
+    project: Project, version: Version, *, base: Branch, head: Branch
+):
+    """Merge ``head`` into a fresh bump branch, then cherry-pick milestone stragglers.
+
+    Used for the first full release: the merge brings in everything already on
+    the beta branch, and the cherry-pick catches milestone PRs that were merged
+    but never cherry-picked into a beta (e.g. last-minute additions straight to
+    the final release). PRs already in via a beta are skipped by their
+    ``cherry-picked`` label.
+    """
+    branch_name = _bump_branch_name(version)
+    milestone = project.get_milestone_by_title(_cycle_milestone_title(version))
+
+    project.checkout(base)
+    project.checkout_new_branch(branch_name)
+    project.merge(head, strategy_option="theirs")
     ret = project.cherry_pick_from_milestone(milestone)
     project.bump_version(version)
     return ret
@@ -121,11 +166,58 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             proj.create_pr(title=str(version), target_branch=target_branch, body=body)
 
 
-def _update_milestones(*, version: Version, next_version: Version):
+def _ensure_cycle_milestone(version: Version):
+    """Make sure the shared cycle milestone exists.
+
+    The milestone is normally opened when the previous ``.0`` release goes out
+    (see :func:`_close_cycle_milestone`). This idempotent guard runs at the
+    first beta to cover the very first cycle or a milestone that went missing.
+    """
+    title = _cycle_milestone_title(version)
+    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+        if proj.get_milestone_by_title(title) is None:
+            proj.create_milestone(title)
+
+
+def _next_cycle_year_month(version: Version) -> tuple[int, int]:
+    """Year and month of the cycle that follows ``version`` (handles December)."""
+    year, month = version.major, version.minor + 1
+    if month > 12:
+        year, month = year + 1, 1
+    return year, month
+
+
+def _set_cycle_milestone_due(version: Version, due: datetime.date):
+    """Set the due date on the cycle milestone across all projects."""
+    title = _cycle_milestone_title(version)
+    due_on = milestone_due_on(due)
+    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+        milestone = proj.get_milestone_by_title(title)
+        if milestone is not None:
+            milestone.update(due_on=due_on)
+
+
+def _close_cycle_milestone(*, version: Version, next_version: Version):
+    """Close the current cycle milestone and open the next patch milestone.
+
+    When a ``.0`` release goes out, also open the next month's ``.0`` cycle
+    milestone so PRs can be marked for it (prioritized for review/merge) during
+    the upcoming dev cycle, before the first beta is cut. Its due date is set to
+    the new-component/feature merge deadline (the Monday before the second
+    Wednesday of that month).
+    """
+    open_next_cycle = version.patch == 0
+    if open_next_cycle:
+        next_year, next_month = _next_cycle_year_month(version)
+        next_cycle_title = f"{next_year}.{next_month}.0"
+        next_cycle_due = milestone_due_on(feature_freeze_date(next_year, next_month))
+
     for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
         proj.create_milestone(str(next_version))
+        if open_next_cycle:
+            proj.create_milestone(next_cycle_title, due_on=next_cycle_due)
 
-        old_milestone = proj.get_milestone_by_title(str(version))
+        old_milestone = proj.get_milestone_by_title(_cycle_milestone_title(version))
         if old_milestone is not None:
             old_milestone.update(state="closed")
 
@@ -195,7 +287,7 @@ def cut_beta_release(version: Version):
         raise EsphomeReleaseError("Must be beta release!")
 
     base = _prompt_base_version(include_prereleases=version.beta != 1)
-    _check_open_milestone_prs(version)
+    _check_open_milestone_prs(version, block=False)
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -224,7 +316,11 @@ def cut_beta_release(version: Version):
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.BETA)
-    _update_milestones(version=version, next_version=version.next_beta_version)
+    _ensure_cycle_milestone(version)
+    if version.beta == 1:
+        # Beta is now being cut, so the milestone is due on release day: the
+        # third Wednesday of the month.
+        _set_cycle_milestone_due(version, release_date(version.major, version.minor))
     _mark_cherry_picked(cherry_picked)
 
     if version.beta == 1:
@@ -238,16 +334,20 @@ def cut_release(version: Version):
         raise EsphomeReleaseError("Must be full release!")
 
     base = _prompt_base_version(include_prereleases=False)
-    _check_open_milestone_prs(version)
+    _check_open_milestone_prs(version, block=True)
     update_local_copies()
 
     # Commits that were cherry-picked
     cherry_picked = []
 
     if version.patch == 0:
-        gprint("Creating first release version using merge")
+        gprint("Creating first release version using merge + cherry-pick")
         for proj in [EsphomeProject, EsphomeDocsProject]:
-            _strategy_merge(proj, version, base=Branch.STABLE, head=Branch.BETA)
+            cherry_picked.extend(
+                _strategy_merge_then_cherry_pick(
+                    proj, version, base=Branch.STABLE, head=Branch.BETA
+                )
+            )
     else:
         gprint("Creating next full release using cherry-pick")
         for proj in [EsphomeProject, EsphomeDocsProject]:
@@ -259,7 +359,7 @@ def cut_release(version: Version):
 
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
-    _update_milestones(version=version, next_version=version.next_patch_version)
+    _close_cycle_milestone(version=version, next_version=version.next_patch_version)
     _mark_cherry_picked(cherry_picked)
 
 

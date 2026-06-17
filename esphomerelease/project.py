@@ -113,8 +113,10 @@ class Project:
 
         return None
 
-    def create_milestone(self, title: str) -> Milestone:
-        return self.repo.create_milestone(title)
+    def create_milestone(
+        self, title: str, *, due_on: Optional[str] = None
+    ) -> Milestone:
+        return self.repo.create_milestone(title, due_on=due_on)
 
     def get_open_prs_for_milestone(self, milestone: Milestone) -> List[PullRequest]:
         """Get all open PRs assigned to a milestone."""
