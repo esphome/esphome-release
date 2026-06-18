@@ -187,6 +187,42 @@ def _next_cycle_year_month(version: Version) -> tuple[int, int]:
     return year, month
 
 
+def _previous_cycle_year_month(version: Version) -> tuple[int, int]:
+    """Year and month of the cycle before ``version`` (handles January)."""
+    year, month = version.major, version.minor - 1
+    if month < 1:
+        year, month = year - 1, 12
+    return year, month
+
+
+def _close_previous_month_patch_milestones(version: Version):
+    """Close leftover open patch milestones from the previous month.
+
+    When the first beta of a new cycle is cut, the previous month's patch line
+    is done; close any of its patch milestones (e.g. ``2026.6.1``) still open —
+    typically the unused "next patch" milestone left behind by the last patch
+    release.
+    """
+    prev_year, prev_month = _previous_cycle_year_month(version)
+    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+        for milestone in proj.get_open_milestones():
+            try:
+                ms_version = Version.parse(milestone.title)
+            except ValueError:
+                continue
+            if (
+                ms_version.major == prev_year
+                and ms_version.minor == prev_month
+                and ms_version.patch >= 1
+                and ms_version.beta == 0
+                and not ms_version.dev
+            ):
+                gprint(
+                    f"Closing leftover patch milestone {milestone.title} for {proj.shortname}"
+                )
+                milestone.update(state="closed")
+
+
 def _set_cycle_milestone_due(version: Version, due: datetime.date):
     """Set the due date on the cycle milestone across all projects."""
     title = _cycle_milestone_title(version)
@@ -321,6 +357,8 @@ def cut_beta_release(version: Version):
         # Beta is now being cut, so the milestone is due on release day: the
         # third Wednesday of the month.
         _set_cycle_milestone_due(version, release_date(version.major, version.minor))
+        # The previous month's patch line is done; close its leftover milestones.
+        _close_previous_month_patch_milestones(version)
     _mark_cherry_picked(cherry_picked)
 
     if version.beta == 1:

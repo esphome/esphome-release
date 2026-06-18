@@ -113,6 +113,10 @@ class Project:
 
         return None
 
+    def get_open_milestones(self) -> List[Milestone]:
+        """Get all open milestones."""
+        return list(self.repo.milestones(state="open"))
+
     def create_milestone(
         self, title: str, *, due_on: Optional[str] = None
     ) -> Milestone:
