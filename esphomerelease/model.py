@@ -82,7 +82,21 @@ class Version:
     def previous_patch_version(self):
         if self.patch == 0:
             raise ValueError(f"No previous patch version for {self}")
-        return self.replace(path=self.patch - 1)
+        return self.replace(patch=self.patch - 1)
+
+    @property
+    def _prerelease_rank(self):
+        """Ordering key for versions sharing major.minor.patch.
+
+        A development build precedes every beta, which in turn precede the
+        final stable release: ``1.15.0-dev`` < ``1.15.0b1`` < ``1.15.0b2`` <
+        ``1.15.0``.
+        """
+        if self.dev:
+            return (0, 0)
+        if self.beta > 0:
+            return (1, self.beta)
+        return (2, 0)
 
     def __lt__(self, other: "Version") -> bool:
         # 1.14.5 < 2.0.0
@@ -94,18 +108,9 @@ class Version:
         # 1.14.5 < 1.14.6
         if self.patch != other.patch:
             return self.patch < other.patch
-        # 1.15.0-dev < 1.15.0
-        if self.dev is not other.beta:
-            return self.dev
-        # 1.15.0b1 < 1.15.0
-        if self.beta != other.beta:
-            # 1.15.0b1 < 1.15.0
-            if 0 in (self.beta, other.beta):
-                return other.beta == 0
-            # 1.15.0b1 < 1.15.0b2
-            return self.beta < other.beta
-        if self.beta < other.beta:
-            return True
+        # 1.15.0-dev < 1.15.0b1 < 1.15.0b2 < 1.15.0
+        if self._prerelease_rank != other._prerelease_rank:
+            return self._prerelease_rank < other._prerelease_rank
 
         assert self == other
         return False
