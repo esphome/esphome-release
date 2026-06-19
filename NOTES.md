@@ -16,7 +16,7 @@ A whole release cycle shares a single milestone named after the final release (f
 
 The cycle milestone's due date tracks the schedule: when it is opened the due date is the new-component/feature merge deadline (the Monday before the second Wednesday of its month — new components and big features should be merged by then to make the release; after it they generally wait for the next one, while bug fixes still go in), and when the first beta is cut the due date is moved to release day (the third Wednesday of the month).
 
-At each beta cut, every PR in the cycle milestone that is merged and not already labelled `cherry-picked` is cherry-picked, then labelled. The final release does the same for any stragglers — merged milestone PRs that never made it into a beta — so take care not to leave anything in the milestone that should not ship.
+The first beta is cut by merging `dev`, which brings in every PR already merged for the cycle; those merged PRs are then removed from the milestone so later beta cuts don't cherry-pick them again (open PRs keep their milestone). At each later beta cut, every PR remaining in the cycle milestone that is merged and not already labelled `cherry-picked` is cherry-picked, then labelled. The final release does the same for any stragglers — merged milestone PRs that never made it into a beta — so take care not to leave anything in the milestone that should not ship.
 
 Open PRs on the milestone are always reported when cutting. For betas this is only a warning and cutting continues; for full releases it blocks until the milestone is clear (or you abort).
 
@@ -104,7 +104,7 @@ $ esphomerelease cut 2026.6.0b1
 $ esphomerelease publish 2026.6.0b1
 
 # To create release 2026.6.0b2:
-# Add PRs to the `2026.6.0` cycle milestone (created when 2026.6.0b1 was cut).
+# Add PRs to the `2026.6.0` cycle milestone (opened when 2026.5.0 was released).
 # Then run
 $ esphomerelease cut 2026.6.0b2
 # Check release PRs

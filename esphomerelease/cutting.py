@@ -195,6 +195,20 @@ def _previous_cycle_year_month(version: Version) -> tuple[int, int]:
     return year, month
 
 
+def _clear_merged_prs_from_cycle_milestone(version: Version):
+    """Drop already-merged PRs from the cycle milestone after the first beta.
+
+    The first beta merges ``dev`` into ``beta``, so every merged milestone PR is
+    now in the release. Removing them from the milestone keeps later beta cuts
+    from cherry-picking them a second time; open PRs keep their milestone.
+    """
+    title = _cycle_milestone_title(version)
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone = proj.get_milestone_by_title(title)
+        for issue in proj.remove_merged_prs_from_milestone(milestone):
+            gprint(f"Removed merged #{issue.number} from {title} ({proj.shortname})")
+
+
 def _close_previous_month_patch_milestones(version: Version):
     """Close leftover open patch milestones from the previous month.
 
@@ -359,6 +373,9 @@ def cut_beta_release(version: Version):
         _set_cycle_milestone_due(version, release_date(version.major, version.minor))
         # The previous month's patch line is done; close its leftover milestones.
         _close_previous_month_patch_milestones(version)
+        # The merge already brought every merged milestone PR into the release;
+        # drop them from the milestone so later betas don't re-cherry-pick them.
+        _clear_merged_prs_from_cycle_milestone(version)
     _mark_cherry_picked(cherry_picked)
 
     if version.beta == 1:
