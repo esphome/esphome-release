@@ -5,10 +5,11 @@ Flags docs PRs where the linked esphome PR has been merged.
 """
 
 import json
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
+
+from esphomerelease.docs_pr_links import extract_esphome_pr_numbers
 
 
 @dataclass
@@ -55,29 +56,6 @@ def get_open_docs_prs() -> list[dict]:
         ]
     )
     return json.loads(output)
-
-
-def extract_esphome_pr_numbers(body: str) -> list[int]:
-    """Extract esphome PR numbers from a docs PR body."""
-    if not body:
-        return []
-
-    # Replace markdown links [text](url) with just the url, so link display
-    # text (e.g. a discussions link rendered as "esphome/esphome#3624") can't
-    # be mistaken for a real PR reference.
-    body = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\2', body)
-
-    pr_numbers = set()
-
-    # Pattern 1: esphome/esphome#NUMBER
-    for match in re.finditer(r"esphome/esphome#(\d+)", body):
-        pr_numbers.add(int(match.group(1)))
-
-    # Pattern 2: https://github.com/esphome/esphome/pull/NUMBER
-    for match in re.finditer(r"github\.com/esphome/esphome/pull/(\d+)", body):
-        pr_numbers.add(int(match.group(1)))
-
-    return sorted(pr_numbers)
 
 
 def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
