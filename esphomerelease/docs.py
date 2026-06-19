@@ -6,6 +6,7 @@ from github3.exceptions import NotFoundError
 
 from .github import get_session
 from .project import EsphomeDocsProject
+from .supporters import format_supporter_lines, render_supporters_template
 
 # Contrib api does not return full user name, and since we query 1 api call per contrib
 # cache so next runs takes less time.
@@ -58,8 +59,6 @@ def gen_supporters():
             continue
         add_repo_contribs(sess, contribs, r.name)
 
-    contribs_lines = []
-
     sorted_usernames = sorted(usernames.keys(), key=str.casefold)
 
     for c in sorted(contribs, key=str.casefold):
@@ -74,9 +73,7 @@ def gen_supporters():
         sorted(usernames.items(), key=lambda item: str.casefold(item[0]))
     )
 
-    for c in sorted_users:
-        name = usernames[c] or c
-        contribs_lines.append(f"- [{name.strip()} (@{c})](https://github.com/{c})")
+    contribs_lines = format_supporter_lines(sorted_users)
 
     with open(USERS_CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(sorted_users, f, indent=2)
@@ -90,11 +87,6 @@ def gen_supporters():
         / "supporters.mdx"
     )
 
-    template = template.replace("TEMPLATE_CONTRIBUTIONS", "\n".join(contribs_lines))
-
-    now = datetime.now()
-    template = template.replace(
-        "TEMPLATE_GENERATION_DATE", f"{now:%B} {now.day}, {now.year}"
-    )
+    template = render_supporters_template(template, contribs_lines, datetime.now())
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(template)
