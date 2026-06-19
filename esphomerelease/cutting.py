@@ -11,6 +11,7 @@ from .changelog_url import (
     use_website_link_for_release,
 )
 from .exceptions import EsphomeReleaseError
+from .milestone import find_missing_milestone_prs
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, Project
 from .util import (
@@ -81,6 +82,51 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
             default=True,
         ):
             raise EsphomeReleaseError("Aborted: open PRs on milestone")
+
+
+def verify_milestone(version: Version, *, base: Version, head: BranchType = None):
+    """Verify every merged PR on the milestone is present in the release.
+
+    For each project, compares the PRs attached to the ``version`` milestone
+    against the PRs actually reachable in ``base..head`` (parsed from the git
+    log). Any merged milestone PR that is not present is a commit that was
+    "left behind" — exactly the failure mode that left 2 commits out of v1.15.
+
+    head: the ref that will become the release. During a cut this is the
+      ``bump-<version>`` branch; for an after-the-fact check it defaults to the
+      release tag (``str(version)``).
+    """
+    if head is None:
+        head = str(version)
+
+    problems = []
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone = proj.get_milestone_by_title(str(version))
+        if milestone is None:
+            continue
+        milestone_prs = proj.get_milestone_pr_numbers(milestone)
+        release_prs = proj.prs_between(f"{base}", head)
+        for number in find_missing_milestone_prs(milestone_prs, release_prs):
+            problems.append((proj, number))
+
+    if not problems:
+        gprint(
+            f"Milestone {version} verified: all merged milestone PRs are in the release."
+        )
+        return
+
+    gprint(click.style(
+        f"Warning: {len(problems)} merged milestone PR(s) missing from the {version} release:",
+        fg="yellow",
+    ))
+    for proj, number in problems:
+        gprint(f"  - [{proj.shortname}] #{number}: {proj.repo.html_url}/pull/{number}")
+
+    confirm(click.style(
+        "Milestone is incomplete. Cherry-pick the missing PRs (or confirm to "
+        "continue anyway).",
+        fg="red",
+    ))
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
@@ -365,6 +411,7 @@ def cut_beta_release(version: Version):
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
+    verify_milestone(version, base=base, head=_bump_branch_name(version))
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.BETA)
     _ensure_cycle_milestone(version)
@@ -413,6 +460,7 @@ def cut_release(version: Version):
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
+    verify_milestone(version, base=base, head=_bump_branch_name(version))
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
     _close_cycle_milestone(version=version, next_version=version.next_patch_version)

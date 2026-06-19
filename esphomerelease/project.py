@@ -136,6 +136,30 @@ class Project:
             open_prs.append(pull)
         return open_prs
 
+    def get_milestone_pr_numbers(
+        self, milestone: Milestone, *, merged_only: bool = True
+    ) -> List[int]:
+        """Return PR numbers attached to a milestone.
+
+        merged_only: if True (default), only include PRs that have been merged.
+          Open/unmerged PRs are surfaced by the open-PR check, so for
+          completeness verification we care about the merged ones that should be
+          present in the release branch.
+        """
+        if milestone is None:
+            return []
+
+        numbers = []
+        for issue in self.repo.issues(milestone=milestone.number, state="all"):
+            try:
+                pull = self.repo.pull_request(issue.number)
+            except NotFoundError:
+                continue  # issue, not pull request
+            if merged_only and not pull.is_merged():
+                continue
+            numbers.append(pull.number)
+        return numbers
+
     def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
 
