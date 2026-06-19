@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from github3.pulls import PullRequest
 
+from .changelog_filter import resolve_changelog_labels
 from .model import BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
 from .util import gprint, process_asynchronously
@@ -76,26 +77,17 @@ def generate(
         pr: PullRequest = project.get_pr(pr_number)
 
         labels: List[str] = [label["name"] for label in pr.labels]
+        milestone_title = pr.milestone["title"] if pr.milestone else None
 
-        # Filter out commits for which the PR has one of the ignored
-        # labels ('reverted')
-        if "reverted" in labels:
+        # Decide inclusion + effective labels (reverted/cherry-pick range).
+        effective_labels = resolve_changelog_labels(
+            labels, milestone_title, base_version, head_version
+        )
+        if effective_labels is None:
+            # Excluded from this release's changelog.
             return
 
-        if "cherry-picked" in labels:
-            try:
-                milestone = pr.milestone["title"]
-                pick_version = Version.parse(pr.milestone["title"])
-                if pick_version <= base_version or pick_version > head_version:
-                    # Not included in this release
-                    return
-            except ValueError:
-                print(f"Could not parse milestone {milestone}")
-                labels.remove("cherry-picked")
-            except TypeError:
-                print(f"PR {pr.number} has no milestone")
-
-        lines.append((pr, labels))
+        lines.append((pr, effective_labels))
 
     jobs = [functools.partial(job, pr) for pr in list_]
     gprint(f"Processing {len(jobs)} PRs")
