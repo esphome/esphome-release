@@ -43,9 +43,10 @@ class Project:
         # The current branch so we don't have to go through git
         self.branch: Optional[str] = None
 
-        # Path of the repo
-        self.path: Path = Path(path)
-        assert self.path.is_dir(), f"Project dir {self.path} does not exist"
+        # Path of the repo. Existence is validated lazily in run_command so the
+        # package stays importable even when the sibling repos aren't checked
+        # out (e.g. for --help or the test suite).
+        self.path: Path = Path(path) if path else Path()
 
         # The branch we have frozen on with .workon()
         self._freeze_branch: Optional[str] = None
@@ -252,6 +253,10 @@ class Project:
 
     def run_command(self, *args, **kwargs):
         """Run a command in the repository working directory."""
+        if not self.path.is_dir():
+            raise EsphomeReleaseError(
+                f"Project dir {self.path} does not exist (check config.json paths)"
+            )
         return execute_command(*args, cwd=str(self.path), **kwargs)
 
     def checkout(self, branch: BranchType):
@@ -291,8 +296,74 @@ class Project:
         yield None
         self._freeze_branch = None
 
+    def ahead_behind(
+        self, branch: Optional[BranchType] = None, remote: str = "origin"
+    ) -> tuple:
+        """Return (ahead, behind) commit counts of a local branch vs its remote.
+
+        ahead  = number of local commits not present on ``remote/branch``
+        behind = number of ``remote/branch`` commits not present locally
+
+        Assumes the remote-tracking ref is already up to date (call ``git fetch``
+        first if accuracy matters).
+        """
+        branch = self.lookup_branch(branch) if branch is not None else self.branch
+        out = (
+            self.run_git(
+                "rev-list",
+                "--left-right",
+                "--count",
+                f"{branch}...{remote}/{branch}",
+                silent=True,
+            )
+            .decode()
+            .strip()
+        )
+        ahead_str, behind_str = out.split()
+        return int(ahead_str), int(behind_str)
+
     def pull(self, remote: Optional[str] = None):
-        """Pull the current branch from a remote."""
+        """Pull the current branch from a remote.
+
+        Before pulling we verify the local branch is not ahead of the remote. A
+        branch carrying local-only commits must not be pulled blindly: a plain
+        ``git pull`` either reports "Already up to date" while silently keeping
+        the stray commits, or fabricates an unexpected merge commit when the
+        branches have diverged. Both poison a release, so we stop and let the
+        operator discard the local commits (resetting hard to the remote) or
+        abort. See issue #4.
+        """
+        remote_name = remote if remote is not None else "origin"
+        # Refresh the remote-tracking ref so the ahead/behind counts are accurate.
+        self.run_git("fetch", remote_name, self.branch)
+
+        ahead, _behind = self.ahead_behind(self.branch, remote=remote_name)
+        if ahead:
+            gprint(
+                f"{self.shortname}: local branch '{self.branch}' is {ahead} commit(s) "
+                f"ahead of {remote_name}/{self.branch}.",
+                fg="yellow",
+            )
+            gprint(
+                f"  Inspect with: git -C {self.path} log "
+                f"{remote_name}/{self.branch}..{self.branch}",
+                fg="yellow",
+            )
+            if not click.confirm(
+                click.style(
+                    f"Discard these local commits and reset {self.shortname} "
+                    f"'{self.branch}' hard to {remote_name}/{self.branch}?",
+                    fg="yellow",
+                ),
+                default=False,
+            ):
+                raise EsphomeReleaseError(
+                    f"Aborted: {self.shortname} branch '{self.branch}' is ahead of "
+                    f"{remote_name}/{self.branch}"
+                )
+            self.reset(f"{remote_name}/{self.branch}", hard=True)
+            return
+
         if remote is not None:
             self.run_git("pull", remote, self.branch)
         else:
@@ -470,7 +541,7 @@ class Project:
 
 EsphomeProject = Project(
     repo_name="esphome",
-    path=CONFIG["esphome_path"],
+    path=CONFIG.get("esphome_path"),
     shortname="esphome",
     stable_branch="release",
     beta_branch="beta",
@@ -485,14 +556,14 @@ EsphomeDocsProject = Project(
     dev_branch="next",
 )
 EsphomeHassioProject = Project(
-    repo_name="hassio", path=CONFIG["esphome_hassio_path"], shortname="hassio"
+    repo_name="hassio", path=CONFIG.get("esphome_hassio_path"), shortname="hassio"
 )
 EsphomeIssuesProject = Project(
-    repo_name="issues", path=CONFIG["esphome_issues_path"], shortname="issues"
+    repo_name="issues", path=CONFIG.get("esphome_issues_path"), shortname="issues"
 )
 EsphomeFeatureRequestsProject = Project(
     repo_name="feature-requests",
-    path=CONFIG["esphome_feature_requests_path"],
+    path=CONFIG.get("esphome_feature_requests_path"),
     shortname="feature-requests",
 )
 

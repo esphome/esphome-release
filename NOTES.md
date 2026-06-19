@@ -16,6 +16,8 @@ Before any of the other steps, it's good to make sure the local repositories are
 
 So the `esphomerelease` script goes through all repositories, switches to the main branches and performs a `git pull`.
 
+Before pulling, each branch is checked against its remote. If a local branch is *ahead* of the remote (it carries commits that were never pushed), the script stops instead of pulling — a plain `git pull` would otherwise silently keep those stray commits or create an unexpected merge, both of which corrupt the release. You are prompted to discard the local commits (hard reset to the remote) or abort.
+
 Additionally, the `current` branch of the docs repo is merged into `next`.
 
 ## Release Cutting
