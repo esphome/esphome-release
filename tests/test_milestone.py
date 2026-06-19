@@ -4,7 +4,34 @@ These exercise the pure set logic in isolation so they need no GitHub access or
 configured working copy.
 """
 
-from esphomerelease.milestone import find_missing_milestone_prs
+from esphomerelease.milestone import (
+    find_missing_milestone_prs,
+    milestone_title_candidates,
+)
+from esphomerelease.model import Version
+
+
+def test_beta_tries_cycle_title_then_per_version():
+    # A beta resolves the per-cycle milestone first, then its own title.
+    v = Version.parse("2026.6.0b3")
+    assert milestone_title_candidates(v) == ["2026.6.0", "2026.6.0b3"]
+
+
+def test_final_release_has_single_candidate():
+    # The final .0 release: cycle title == per-version title, deduplicated.
+    v = Version.parse("2026.6.0")
+    assert milestone_title_candidates(v) == ["2026.6.0"]
+
+
+def test_patch_release_keeps_its_own_title():
+    # Stripping beta/dev leaves the patch component, so a patch has one title.
+    v = Version.parse("2026.6.1")
+    assert milestone_title_candidates(v) == ["2026.6.1"]
+
+
+def test_dev_version_strips_to_cycle_title():
+    v = Version.parse("2026.6.0-dev")
+    assert milestone_title_candidates(v) == ["2026.6.0", "2026.6.0-dev"]
 
 
 def test_all_present_returns_empty():

@@ -13,6 +13,27 @@ Kept deliberately free of any ``config`` / GitHub imports so it stays importable
 from typing import Iterable, List
 
 
+def milestone_title_candidates(version) -> List[str]:
+    """Ordered milestone titles to try for a release, most-specific first.
+
+    Two milestone models exist in the wild:
+
+    * per-version — each release has its own milestone (title == ``str(version)``);
+    * per-cycle — a single milestone shared by every beta plus the final release,
+      titled with the beta/dev components stripped (e.g. ``2026.6.0`` for
+      ``2026.6.0b3``); patch releases keep their own title.
+
+    Returns the per-cycle title followed by the per-version title, de-duplicated,
+    so a lookup can resolve a milestone under either model. ``version`` only needs
+    a ``replace(beta=, dev=)`` method and a ``str()`` — no GitHub/config import.
+    """
+    cycle_title = str(version.replace(beta=0, dev=False))
+    per_version = str(version)
+    if cycle_title == per_version:
+        return [cycle_title]
+    return [cycle_title, per_version]
+
+
 def find_missing_milestone_prs(
     milestone_prs: Iterable[int], release_prs: Iterable[int]
 ) -> List[int]:

@@ -11,7 +11,7 @@ from .changelog_url import (
     use_website_link_for_release,
 )
 from .exceptions import EsphomeReleaseError
-from .milestone import find_missing_milestone_prs
+from .milestone import find_missing_milestone_prs, milestone_title_candidates
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, Project
 from .util import (
@@ -95,13 +95,25 @@ def verify_milestone(version: Version, *, base: Version, head: BranchType = None
     head: the ref that will become the release. During a cut this is the
       ``bump-<version>`` branch; for an after-the-fact check it defaults to the
       release tag (``str(version)``).
+
+    Two milestone models exist: a per-version milestone (title == ``str(version)``)
+    and a single per-cycle milestone shared by every beta plus the final release
+    (title == the version with beta/dev stripped). The cycle title is tried first
+    and the per-version title is the fallback, so the guard resolves a milestone
+    under either model. Note: when the per-cycle model also strips merged PRs from
+    the milestone at first beta, this check only sees PRs still attached at cut
+    time — a deeper fix would need the full set of PRs ever milestoned this cycle.
     """
     if head is None:
         head = str(version)
 
     problems = []
     for proj in [EsphomeProject, EsphomeDocsProject]:
-        milestone = proj.get_milestone_by_title(str(version))
+        milestone = None
+        for title in milestone_title_candidates(version):
+            milestone = proj.get_milestone_by_title(title)
+            if milestone is not None:
+                break
         if milestone is None:
             continue
         milestone_prs = proj.get_milestone_pr_numbers(milestone)
