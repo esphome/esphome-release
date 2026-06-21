@@ -151,10 +151,12 @@ class Project:
 
         numbers = []
         for issue in self.repo.issues(milestone=milestone.number, state="all"):
-            try:
-                pull = self.repo.pull_request(issue.number)
-            except NotFoundError:
-                continue  # issue, not pull request
+            if not issue.pull_request_urls:
+                continue  # genuinely an issue, not a pull request
+            # This issue *is* a PR, so a 404 here is unexpected (transient or
+            # permission). Let it propagate rather than silently undercounting
+            # the milestone and weakening the completeness check.
+            pull = self.repo.pull_request(issue.number)
             if merged_only and not pull.is_merged():
                 continue
             numbers.append(pull.number)

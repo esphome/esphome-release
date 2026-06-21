@@ -108,6 +108,7 @@ def verify_milestone(version: Version, *, base: Version, head: BranchType = None
         head = str(version)
 
     problems = []
+    unresolved = []
     for proj in [EsphomeProject, EsphomeDocsProject]:
         milestone = None
         for title in milestone_title_candidates(version):
@@ -115,30 +116,52 @@ def verify_milestone(version: Version, *, base: Version, head: BranchType = None
             if milestone is not None:
                 break
         if milestone is None:
+            # No milestone resolved under either title model. Don't skip
+            # silently — that would print a green "verified" having checked
+            # nothing, the exact false-confidence this guard exists to prevent.
+            unresolved.append(proj)
             continue
         milestone_prs = proj.get_milestone_pr_numbers(milestone)
         release_prs = proj.prs_between(f"{base}", head)
         for number in find_missing_milestone_prs(milestone_prs, release_prs):
             problems.append((proj, number))
 
-    if not problems:
+    if not problems and not unresolved:
         gprint(
             f"Milestone {version} verified: all merged milestone PRs are in the release."
         )
         return
 
-    gprint(click.style(
-        f"Warning: {len(problems)} merged milestone PR(s) missing from the {version} release:",
-        fg="yellow",
-    ))
-    for proj, number in problems:
-        gprint(f"  - [{proj.shortname}] #{number}: {proj.repo.html_url}/pull/{number}")
+    if unresolved:
+        gprint(click.style(
+            f"Warning: could not resolve a {version} milestone for "
+            f"{len(unresolved)} project(s) — nothing was verified for them:",
+            fg="yellow",
+        ))
+        tried = ", ".join(milestone_title_candidates(version))
+        for proj in unresolved:
+            gprint(f"  - [{proj.shortname}] tried: {tried}")
 
-    confirm(click.style(
-        "Milestone is incomplete. Cherry-pick the missing PRs (or confirm to "
-        "continue anyway).",
-        fg="red",
-    ))
+    if problems:
+        gprint(click.style(
+            f"Warning: {len(problems)} merged milestone PR(s) missing from the {version} release:",
+            fg="yellow",
+        ))
+        for proj, number in problems:
+            gprint(f"  - [{proj.shortname}] #{number}: {proj.repo.html_url}/pull/{number}")
+
+    # Mirror the open-PR check: offer an explicit abort so the operator can
+    # stop, cherry-pick the missing PRs, and re-run — rather than being forced
+    # to either continue or Ctrl-C. Default is to abort.
+    if not click.confirm(
+        click.style(
+            "Milestone is incomplete. Cherry-pick the missing PRs and re-run, "
+            "or continue anyway?",
+            fg="red",
+        ),
+        default=False,
+    ):
+        raise EsphomeReleaseError("Aborted: incomplete milestone")
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
