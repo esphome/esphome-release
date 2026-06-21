@@ -1,3 +1,4 @@
+import datetime
 import os
 import subprocess
 import time
@@ -150,6 +151,38 @@ def checkout_dev():
     gprint("Checking out dev again...")
     EsphomeProject.checkout("dev")
     EsphomeDocsProject.checkout("next")
+
+
+def nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime.date:
+    """Return the date of the nth ``weekday`` (Mon=0..Sun=6) in a month."""
+    first = datetime.date(year, month, 1)
+    offset = (weekday - first.weekday()) % 7
+    return datetime.date(year, month, 1 + offset + (n - 1) * 7)
+
+
+def feature_freeze_date(year: int, month: int) -> datetime.date:
+    """Soft deadline for merging new components/large features into a release:
+    the Monday before the second Wednesday of the month.
+
+    New components and big features merged by this date are eligible for that
+    month's release; after it they are generally held to the next release, while
+    bug fixes still go in.
+    """
+    second_wednesday = nth_weekday(year, month, 2, 2)
+    return second_wednesday - datetime.timedelta(days=2)
+
+
+def release_date(year: int, month: int) -> datetime.date:
+    """Release day: the third Wednesday of the month."""
+    return nth_weekday(year, month, 2, 3)
+
+
+def milestone_due_on(date: datetime.date) -> str:
+    """Format a date as the ISO 8601 timestamp GitHub expects for a milestone.
+
+    Noon UTC keeps the due date on the intended day regardless of timezone.
+    """
+    return f"{date.isoformat()}T12:00:00Z"
 
 
 def confirm(text):

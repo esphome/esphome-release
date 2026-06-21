@@ -113,8 +113,14 @@ class Project:
 
         return None
 
-    def create_milestone(self, title: str) -> Milestone:
-        return self.repo.create_milestone(title)
+    def get_open_milestones(self) -> List[Milestone]:
+        """Get all open milestones."""
+        return list(self.repo.milestones(state="open"))
+
+    def create_milestone(
+        self, title: str, *, due_on: Optional[str] = None
+    ) -> Milestone:
+        return self.repo.create_milestone(title, due_on=due_on)
 
     def get_open_prs_for_milestone(self, milestone: Milestone) -> List[PullRequest]:
         """Get all open PRs assigned to a milestone."""
@@ -177,6 +183,28 @@ class Project:
         """Mark all PRs cherry-picked by adding a label."""
         for issue in to_pick:
             issue.add_labels("cherry-picked")
+
+    def remove_merged_prs_from_milestone(self, milestone: Milestone) -> List[Issue]:
+        """Remove already-merged PRs from a milestone.
+
+        Used at the first beta cut: those PRs are brought into the release by the
+        dev->beta merge, so clearing their milestone stops later beta cuts from
+        cherry-picking them again. Open PRs keep their milestone.
+        """
+        if milestone is None:
+            return []
+
+        removed = []
+        for issue in self.repo.issues(milestone=milestone.number, state="closed"):
+            try:
+                pull = self.repo.pull_request(issue.number)
+            except NotFoundError:
+                continue  # issue, not pull request
+            if not pull.is_merged():
+                continue
+            issue.edit(milestone=0)  # 0 clears the milestone in github3
+            removed.append(issue)
+        return removed
 
     def latest_release(self, *, include_prereleases: bool = True) -> Version:
         """Get the latest release"""
