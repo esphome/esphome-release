@@ -5,6 +5,11 @@ import datetime
 import click
 
 from . import changelog, docs
+from .changelog_url import (
+    changelog_too_long,
+    changelog_website_url,
+    use_website_link_for_release,
+)
 from .exceptions import EsphomeReleaseError
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, Project
@@ -125,15 +130,13 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
-        is_first_beta = version.beta == 1
-        is_first_main_release = version.patch == 0 and version.beta == 0
-        if proj == EsphomeProject and (is_first_beta or is_first_main_release):
+        if use_website_link_for_release(
+            version, is_primary_project=proj == EsphomeProject
+        ):
             gprint(
                 f"Using website link for {proj.shortname} changelog (first beta/main release)"
             )
-            changelog_version = version.replace(patch=0, beta=0, dev=False)
-            domain = "beta.esphome.io" if version.beta else "esphome.io"
-            changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
+            changelog_md = changelog_website_url(version)
         else:
             changelog_md = changelog.generate(
                 project=proj,
@@ -149,13 +152,11 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
             )
 
             # If changelog is too long, replace with a link to website
-            if len(changelog_md) > 65000:
+            if changelog_too_long(changelog_md):
                 gprint(
                     f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
                 )
-                changelog_version = version.replace(patch=0, beta=0, dev=False)
-                domain = "beta.esphome.io" if version.beta else "esphome.io"
-                changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
+                changelog_md = changelog_website_url(version)
 
         body = (
             "**Do not merge, release script will automatically merge**\n"
@@ -463,15 +464,13 @@ def _publish_release(
     confirm(f"Publish version {version}?")
     for proj in projects:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
-        is_first_beta = version.beta == 1
-        is_first_main_release = version.patch == 0 and version.beta == 0
-        if proj == EsphomeProject and (is_first_beta or is_first_main_release):
+        if use_website_link_for_release(
+            version, is_primary_project=proj == EsphomeProject
+        ):
             gprint(
                 f"Using website link for {proj.shortname} changelog (first beta/main release)"
             )
-            changelog_version = version.replace(patch=0, beta=0, dev=False)
-            domain = "beta.esphome.io" if version.beta else "esphome.io"
-            changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
+            changelog_md = changelog_website_url(version)
         else:
             changelog_md = changelog.generate(
                 project=proj,
@@ -485,13 +484,11 @@ def _publish_release(
             )
 
             # If changelog is too long, replace with a link to website
-            if len(changelog_md) > 65000:
+            if changelog_too_long(changelog_md):
                 gprint(
                     f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
                 )
-                changelog_version = version.replace(patch=0, beta=0, dev=False)
-                domain = "beta.esphome.io" if version.beta else "esphome.io"
-                changelog_md = f"https://{domain}/changelog/{changelog_version}.html"
+                changelog_md = changelog_website_url(version)
 
         _merge_release_pr(proj=proj, version=version, head_branch=head_branch)
         with proj.workon(head_branch):
