@@ -237,11 +237,16 @@ def execute_command(*args, **kwargs) -> bytes:
             print(process.stdout.decode())
 
     if process.returncode != 0:
-        if not silent or not fail_ok:
-            print("stderr: ")
-        if process.stderr is None:
-            raise EsphomeReleaseError
-        click.secho(process.stderr.decode(), fg="red")
+        # ``live=True`` (or any caller merging stderr into stdout) leaves
+        # ``process.stderr`` as None. Only the stderr *printing* depends on
+        # that — the fail_ok / on_fail / retry handling below must run
+        # regardless. Raising here unconditionally would bypass an on_fail
+        # recovery callback (e.g. the cherry-pick conflict subshell) and abort
+        # the release even when the caller asked to handle the failure itself.
+        if process.stderr is not None:
+            if not silent or not fail_ok:
+                print("stderr: ")
+            click.secho(process.stderr.decode(), fg="red")
 
         if not fail_ok:
             if on_fail is not None:
