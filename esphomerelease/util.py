@@ -209,7 +209,7 @@ def execute_command(*args, **kwargs) -> bytes:
         else:
             print(f"Running: {full_cmd}")
 
-        if CONFIG["step"]:
+        if CONFIG.get("step"):
             while not click.confirm("Run command?"):
                 continue
 
