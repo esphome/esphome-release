@@ -26,7 +26,7 @@ Before any of the other steps, it's good to make sure the local repositories are
 
 So the `esphomerelease` script goes through all repositories, switches to the main branches and performs a `git pull`.
 
-Additionally, the `current` branch of the docs repo is merged into `next`.
+Additionally, the `current` branch of the docs repo is merged into `next` and `beta`. Once the cut has finished successfully, those two docs branches are pushed so the merge lands on the remote.
 
 ## Release Cutting
 

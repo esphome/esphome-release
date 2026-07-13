@@ -333,6 +333,18 @@ def _docs_update_supporters(*, version: Version):
         EsphomeDocsProject.commit(f"Update supporters for {version}", ignore_empty=True)
 
 
+def _push_current_merge_branches():
+    """Push the docs branches that received the ``current`` merge.
+
+    :func:`update_local_copies` merges the docs ``current`` branch into ``next``
+    and ``beta`` locally at the start of every cut. Push them once the cut has
+    finished successfully so the merge lands on the remote.
+    """
+    for branch in (Branch.DEV, Branch.BETA):
+        with EsphomeDocsProject.workon(branch):
+            EsphomeDocsProject.push()
+
+
 def cut_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
@@ -384,6 +396,8 @@ def cut_beta_release(version: Version):
             with proj.workon(Branch.DEV):
                 proj.push()
 
+    _push_current_merge_branches()
+
 
 def cut_release(version: Version):
     if version.beta or version.dev:
@@ -417,6 +431,8 @@ def cut_release(version: Version):
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
     _close_cycle_milestone(version=version, next_version=version.next_patch_version)
     _mark_cherry_picked(cherry_picked)
+
+    _push_current_merge_branches()
 
 
 def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
