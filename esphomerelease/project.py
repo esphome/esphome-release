@@ -136,6 +136,30 @@ class Project:
             open_prs.append(pull)
         return open_prs
 
+    def get_next_beta_prs_for_milestone(
+        self, milestone: Milestone
+    ) -> List[PullRequest]:
+        """Get merged PRs in a milestone that haven't been cherry-picked yet.
+
+        These are the PRs :meth:`cherry_pick_from_milestone` would pick at the
+        next beta cut, sorted by merge time (the order they would be applied).
+        """
+        if milestone is None:
+            return []
+
+        prs: List[PullRequest] = []
+        for issue in self.repo.issues(milestone=milestone.number, state="closed"):
+            try:
+                pull = self.repo.pull_request(issue.number)
+            except NotFoundError:
+                continue  # issue, not pull request
+            if not pull.is_merged():
+                continue
+            if any(label.name == "cherry-picked" for label in issue.labels()):
+                continue
+            prs.append(pull)
+        return sorted(prs, key=lambda pr: pr.merged_at)
+
     def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
 

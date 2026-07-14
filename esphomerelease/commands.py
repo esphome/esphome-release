@@ -1,7 +1,7 @@
 import glob
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import click
 from github3.issues.label import Label
@@ -200,6 +200,54 @@ def milestone_cherry_pick(milestone):
         ret = proj.cherry_pick_from_milestone(milestone_obj)
         if click.confirm("Label picked commits as cherry-picked?", default=True):
             proj.mark_pulls_cherry_picked(ret)
+
+
+def _next_beta_milestone_title() -> str:
+    """Title of the cycle milestone the next beta release will be cut from.
+
+    During a beta period the latest release (including prereleases) is the
+    beta itself, so its cycle milestone is used; otherwise the next beta
+    starts next month's cycle.
+    """
+    latest = EsphomeProject.latest_release()
+    if latest.beta:
+        return str(latest.replace(beta=0))
+    next_year, next_month = cutting._next_cycle_year_month(latest)
+    return f"{next_year}.{next_month}.0"
+
+
+@cli.command(help="List the PRs in the milestone that will be in the next beta release.")
+@click.argument("milestone", required=False)
+def next_beta_prs(milestone: Optional[str]) -> None:
+    if milestone is None:
+        milestone = _next_beta_milestone_title()
+
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone_obj = proj.get_milestone_by_title(milestone)
+        if milestone_obj is None:
+            gprint(
+                f"Couldn't find milestone {milestone} for project {proj.name}",
+                fg="yellow",
+            )
+            continue
+
+        prs = proj.get_next_beta_prs_for_milestone(milestone_obj)
+        gprint(
+            f"{proj.name}: {len(prs)} PR(s) on milestone {milestone} "
+            "will be in the next beta"
+        )
+        for pr in prs:
+            print(f"  #{pr.number} {pr.title} by @{pr.user.login} ({pr.html_url})")
+
+        open_prs = proj.get_open_prs_for_milestone(milestone_obj)
+        if open_prs:
+            gprint(
+                f"{proj.name}: {len(open_prs)} open PR(s) still on the milestone "
+                "(not in the beta unless merged)",
+                fg="yellow",
+            )
+            for pr in open_prs:
+                print(f"  #{pr.number} {pr.title} ({pr.html_url})")
 
 
 def count_file(fname):
