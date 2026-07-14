@@ -126,7 +126,7 @@ def _stub_cut_helpers(cutting, monkeypatch, recorder):
         monkeypatch.setattr(cutting, name, lambda *a, **k: [])
 
     monkeypatch.setattr(
-        cutting, "_prompt_base_version", lambda **k: Version.parse("2026.5.0")
+        cutting, "_prompt_base_version", lambda *a, **k: Version.parse("2026.5.0")
     )
     monkeypatch.setattr(
         cutting, "_push_current_merge_branches", lambda: recorder.append(True)

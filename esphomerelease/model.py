@@ -82,7 +82,7 @@ class Version:
     def previous_patch_version(self):
         if self.patch == 0:
             raise ValueError(f"No previous patch version for {self}")
-        return self.replace(path=self.patch - 1)
+        return self.replace(patch=self.patch - 1)
 
     def __lt__(self, other: "Version") -> bool:
         # 1.14.5 < 2.0.0

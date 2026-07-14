@@ -230,12 +230,17 @@ class Project:
             removed.append(issue)
         return removed
 
+    # GitHub lists releases newest-first, so the highest version is always
+    # within the most recently created ones — one API page is enough instead
+    # of paginating the repo's entire release history.
+    RECENT_RELEASES_TO_CHECK = 30
+
     def latest_release(self, *, include_prereleases: bool = True) -> Version:
         """Get the latest release"""
         if not include_prereleases:
             return Version.parse(self.repo.latest_release().tag_name)
         found_versions = []
-        for release in self.repo.releases():
+        for release in self.repo.releases(number=self.RECENT_RELEASES_TO_CHECK):
             try:
                 found_versions.append(Version.parse(release.tag_name))
             except ValueError:

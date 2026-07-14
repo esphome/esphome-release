@@ -278,12 +278,26 @@ def _mark_cherry_picked(cherry_picked):
         picked.add_labels("cherry-picked")
 
 
-def _prompt_base_version(*, include_prereleases: bool = False) -> Version:
+def _default_base_version(version: Version) -> Version:
+    """Best guess of the previously published version to diff against.
+
+    Derived from the version being released so no GitHub API pagination is
+    needed: a later beta follows the previous beta, a patch release follows
+    the previous patch. Only the first beta and the first full release of a
+    cycle (where the previous stable patch number is unknowable) ask GitHub,
+    and that is a single ``releases/latest`` request.
+    """
+    if version.beta > 1:
+        return version.previous_beta_version
+    if version.beta == 0 and version.patch > 0:
+        return version.previous_patch_version
+    return EsphomeProject.latest_release(include_prereleases=False)
+
+
+def _prompt_base_version(version: Version) -> Version:
     base_str = click.prompt(
         "Please enter base (what release to compare with for changelog)",
-        default=str(
-            EsphomeProject.latest_release(include_prereleases=include_prereleases)
-        ),
+        default=str(_default_base_version(version)),
     )
     return Version.parse(base_str)
 
@@ -349,7 +363,7 @@ def cut_beta_release(version: Version):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _prompt_base_version(include_prereleases=version.beta != 1)
+    base = _prompt_base_version(version)
     _check_open_milestone_prs(version, block=False)
     update_local_copies()
 
@@ -403,7 +417,7 @@ def cut_release(version: Version):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _prompt_base_version(include_prereleases=False)
+    base = _prompt_base_version(version)
     _check_open_milestone_prs(version, block=True)
     update_local_copies()
 
@@ -516,7 +530,7 @@ def publish_beta_release(version: Version, projects: list[Project]):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _prompt_base_version(include_prereleases=version.beta != 1)
+    base = _prompt_base_version(version)
     _publish_release(
         version=version,
         base=base,
@@ -535,7 +549,7 @@ def publish_release(version: Version, projects: list[Project]):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _prompt_base_version(include_prereleases=False)
+    base = _prompt_base_version(version)
     _publish_release(
         version=version,
         base=base,
