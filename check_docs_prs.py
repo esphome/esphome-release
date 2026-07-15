@@ -7,6 +7,7 @@ Flags docs PRs where the linked esphome PR has been merged.
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from esphomerelease.docs_pr_links import extract_esphome_pr_numbers
@@ -83,15 +84,33 @@ def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
         return None
 
 
+def fetch_linked_pr_states(pr_numbers: list[int]) -> dict[int, LinkedPR | None]:
+    """Fetch the state of many esphome PRs concurrently, one gh call each."""
+    if not pr_numbers:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(16, len(pr_numbers))) as pool:
+        return dict(zip(pr_numbers, pool.map(get_esphome_pr_state, pr_numbers)))
+
+
 def main():
     print("Fetching open PRs from esphome.io...")
     docs_prs = get_open_docs_prs()
     print(f"Found {len(docs_prs)} open PRs\n")
 
+    linked_numbers: dict[int, list[int]] = {
+        pr["number"]: extract_esphome_pr_numbers(pr.get("body", ""))
+        for pr in docs_prs
+    }
+    # Several docs PRs may reference the same esphome PR; fetch each unique
+    # number once, in parallel, instead of serially per reference.
+    linked_states = fetch_linked_pr_states(
+        sorted({num for nums in linked_numbers.values() for num in nums})
+    )
+
     flagged_prs: list[DocsPR] = []
 
     for pr in docs_prs:
-        pr_numbers = extract_esphome_pr_numbers(pr.get("body", ""))
+        pr_numbers = linked_numbers[pr["number"]]
 
         if not pr_numbers:
             continue
@@ -100,7 +119,7 @@ def main():
         has_merged = False
 
         for pr_num in pr_numbers:
-            linked_pr = get_esphome_pr_state(pr_num)
+            linked_pr = linked_states[pr_num]
             if linked_pr:
                 linked_prs.append(linked_pr)
                 if linked_pr.state == "MERGED":

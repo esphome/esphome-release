@@ -76,9 +76,13 @@ def purge_cloudflare_cache():
 
 def process_asynchronously(
     jobs, heading: str = None, num_threads: int = os.cpu_count()
-) -> str:
-    """Run a list of function objects asynchronously in a threa pool and return the result as a list."""
+) -> list:
+    """Run a list of function objects asynchronously in a thread pool and return the result as a list."""
+    if not jobs:
+        return []
+
     result = {}
+    errors: dict = {}
     q = queue.Queue(maxsize=num_threads)
 
     def worker():
@@ -89,8 +93,14 @@ def process_asynchronously(
                 break
 
             num, job = item
-            result[num] = job()
-            q.task_done()
+            # A raised job must not kill the worker before task_done(),
+            # otherwise q.join() blocks forever.
+            try:
+                result[num] = job()
+            except Exception as exc:  # pylint: disable=broad-except
+                errors[num] = exc
+            finally:
+                q.task_done()
 
     threads = []
     for _ in range(num_threads):
@@ -106,6 +116,9 @@ def process_asynchronously(
 
     for t in threads:
         t.join()
+
+    if errors:
+        raise errors[min(errors)]
 
     return [result[i] for i, job in enumerate(jobs)]
 

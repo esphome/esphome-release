@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import os
 import re
 import sys
@@ -8,7 +9,6 @@ from typing import Dict, List, Optional, Union
 
 import click
 import pexpect
-from github3.exceptions import NotFoundError
 from github3.issues.issue import Issue
 from github3.issues.milestone import Milestone
 from github3.pulls import PullRequest
@@ -18,7 +18,33 @@ from . import util
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
 from .model import Branch, BranchType, Version
-from .util import confirm, execute_command, gprint
+from .util import confirm, execute_command, gprint, process_asynchronously
+
+
+def _issue_pr_merged_at(issue: Issue) -> Optional[str]:
+    """Merge timestamp of the PR behind an issue, from the issue payload.
+
+    The issues listing embeds a ``pull_request`` block (with ``merged_at``)
+    for issues that are pull requests, so both "is this a PR" and "is it
+    merged" can be answered without any extra API request. Returns ``None``
+    for plain issues and for unmerged PRs.
+    """
+    urls = issue.pull_request_urls or {}
+    return urls.get("merged_at")
+
+
+def _issue_is_pr(issue: Issue) -> bool:
+    """Whether an issue from a listing is a pull request (no API call)."""
+    return issue.pull_request_urls is not None
+
+
+def _issue_is_cherry_picked(issue: Issue) -> bool:
+    """Whether the issue carries the ``cherry-picked`` label (no API call).
+
+    Uses the labels embedded in the issue listing payload instead of the
+    ``issue.labels()`` method, which hits the API once per issue.
+    """
+    return any(label.name == "cherry-picked" for label in issue.original_labels)
 
 
 class Project:
@@ -83,6 +109,26 @@ class Project:
             self.pr_cache[pr] = self.repo.pull_request(pr)
         return self.pr_cache[pr]
 
+    def get_prs(self, numbers: List[int]) -> List[PullRequest]:
+        """Get multiple PRs by number, fetching uncached ones in parallel."""
+        missing = list(dict.fromkeys(n for n in numbers if n not in self.pr_cache))
+        if missing:
+            jobs = [functools.partial(self.repo.pull_request, n) for n in missing]
+            for pull in process_asynchronously(jobs, "Fetching PRs"):
+                self.pr_cache[pull.number] = pull
+        return [self.pr_cache[n] for n in numbers]
+
+    def _milestone_pr_issues(self, milestone: Milestone, state: str) -> List[Issue]:
+        """List the issues on a milestone that are pull requests.
+
+        Judged from the listing payload alone — no per-issue API requests.
+        """
+        return [
+            issue
+            for issue in self.repo.issues(milestone=milestone.number, state=state)
+            if _issue_is_pr(issue)
+        ]
+
     def get_pr_by_title(
         self,
         *,
@@ -127,14 +173,8 @@ class Project:
         if milestone is None:
             return []
 
-        open_prs = []
-        for issue in self.repo.issues(milestone=milestone.number, state="open"):
-            try:
-                pull = self.repo.pull_request(issue.number)
-            except NotFoundError:
-                continue  # issue, not pull request
-            open_prs.append(pull)
-        return open_prs
+        issues = self._milestone_pr_issues(milestone, "open")
+        return self.get_prs([issue.number for issue in issues])
 
     def get_next_beta_prs_for_milestone(
         self, milestone: Milestone
@@ -147,18 +187,13 @@ class Project:
         if milestone is None:
             return []
 
-        prs: List[PullRequest] = []
-        for issue in self.repo.issues(milestone=milestone.number, state="closed"):
-            try:
-                pull = self.repo.pull_request(issue.number)
-            except NotFoundError:
-                continue  # issue, not pull request
-            if not pull.is_merged():
-                continue
-            if any(label.name == "cherry-picked" for label in issue.labels()):
-                continue
-            prs.append(pull)
-        return sorted(prs, key=lambda pr: pr.merged_at)
+        numbers = [
+            issue.number
+            for issue in self._milestone_pr_issues(milestone, "closed")
+            if _issue_pr_merged_at(issue) is not None
+            and not _issue_is_cherry_picked(issue)
+        ]
+        return sorted(self.get_prs(numbers), key=lambda pr: pr.merged_at)
 
     def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
@@ -168,18 +203,15 @@ class Project:
         if milestone is None:
             return []
 
-        to_pick = []
+        pick_issues: List[Issue] = []
 
-        for issue in self.repo.issues(milestone=milestone.number, state="closed"):
-            # Convert to pull request and check if it's merged yet
-            try:
-                pull = self.repo.pull_request(issue.number)
-            except NotFoundError:
-                continue  # issue, not pull request
-
-            if not pull.is_merged():
+        for issue in self._milestone_pr_issues(milestone, "closed"):
+            # Merged state and labels come from the issue listing payload;
+            # only the PRs that will actually be picked are fetched (in
+            # parallel, for their merge_commit_sha) below.
+            if _issue_pr_merged_at(issue) is None:
                 log = click.style(
-                    f"Not merged yet: {pull.title}\nIf you want to add it please merge "
+                    f"Not merged yet: {issue.title}\nIf you want to add it please merge "
                     f"it manually then confirm.",
                     fg="yellow",
                 )
@@ -187,13 +219,14 @@ class Project:
                     pass
                 continue
 
-            if any(label.name == "cherry-picked" for label in issue.labels()):
-                gprint(f"Already cherry picked: {pull.title}", fg="yellow")
+            if _issue_is_cherry_picked(issue):
+                gprint(f"Already cherry picked: {issue.title}", fg="yellow")
                 continue
 
-            to_pick.append((pull, issue))
+            pick_issues.append(issue)
 
-        to_pick = sorted(to_pick, key=lambda obj: obj[0].merged_at)
+        pulls = self.get_prs([issue.number for issue in pick_issues])
+        to_pick = sorted(zip(pulls, pick_issues), key=lambda obj: obj[0].merged_at)
 
         for pull, _ in to_pick:
             gprint(f"Cherry picking {pull.title}: {pull.merge_commit_sha}")
@@ -219,12 +252,8 @@ class Project:
             return []
 
         removed = []
-        for issue in self.repo.issues(milestone=milestone.number, state="closed"):
-            try:
-                pull = self.repo.pull_request(issue.number)
-            except NotFoundError:
-                continue  # issue, not pull request
-            if not pull.is_merged():
+        for issue in self._milestone_pr_issues(milestone, "closed"):
+            if _issue_pr_merged_at(issue) is None:
                 continue
             issue.edit(milestone=0)  # 0 clears the milestone in github3
             removed.append(issue)

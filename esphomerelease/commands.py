@@ -1,3 +1,4 @@
+import functools
 import glob
 import json
 from pathlib import Path
@@ -13,7 +14,13 @@ from .docs import gen_supporters
 from .github import get_session
 from .model import Branch, Version
 from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject, Project
-from .util import confirm, copy_clipboard, execute_command, gprint
+from .util import (
+    confirm,
+    copy_clipboard,
+    execute_command,
+    gprint,
+    process_asynchronously,
+)
 
 USERS_CACHE_FILE = "users_cache.json"
 
@@ -307,18 +314,32 @@ def labels():
         sess.repository("esphome", "esphome"),
         sess.repository("esphome", "esphome.io"),
     ]
+
+    def list_repo_labels(repo: Repository) -> list[Label]:
+        return list(repo.labels())
+
+    # Paginating thousands of labels takes many requests per repo; run the
+    # four repos' listings concurrently.
+    all_repo_labels: list[list[Label]] = process_asynchronously(
+        [functools.partial(list_repo_labels, repo) for repo in repos],
+        "Fetching labels",
+    )
     failed_to_update: dict[str, list[str]] = {}
     failed_to_create: dict[str, list[str]] = {}
-    for repo in repos:
-        repo_labels: list[Label] = [label for label in repo.labels()]
+    for repo, repo_labels in zip(repos, all_repo_labels):
+        # Index by lowercased name: with ~3k components and ~3k labels the
+        # per-component list scans are millions of string compares.
+        labels_by_lower_name: dict[str, list[Label]] = {}
+        for repo_label in repo_labels:
+            labels_by_lower_name.setdefault(repo_label.name.lower(), []).append(
+                repo_label
+            )
         for comp in found_components:
             label_name = f"component: {comp.lower()}"
-            found_old_labels = [
-                x
-                for x in repo_labels
-                if x.name.lower() == f"integration: {comp.lower()}"
-            ]
-            found_new_labels = any(x.name.lower() == label_name for x in repo_labels)
+            found_old_labels = labels_by_lower_name.get(
+                f"integration: {comp.lower()}", []
+            )
+            found_new_labels = label_name in labels_by_lower_name
             if found_old_labels:
                 for found_old_label in found_old_labels:
                     print(
