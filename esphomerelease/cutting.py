@@ -1,6 +1,9 @@
 """Logic for cutting releases."""
 
 import datetime
+import re
+from pathlib import Path
+from typing import NamedTuple
 
 import click
 
@@ -15,7 +18,6 @@ from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
 from .util import (
     confirm,
-    copy_clipboard,
     feature_freeze_date,
     gprint,
     milestone_due_on,
@@ -313,40 +315,327 @@ def _prompt_base_version(version: Version) -> Version:
     return Version.parse(base_str)
 
 
+BETA_NOTICE = (
+    "> [!NOTE]\n"
+    "> This is a beta release. Details on this page may change before the stable release is published."
+)
+
+
+def _with_beta_notice(content: str) -> str:
+    """Return ``content`` with the beta notice inserted (no-op if present).
+
+    The notice goes right after the frontmatter, before the ``import ...``
+    lines, separated by blank lines. MDX hoists ESM imports, so content
+    before an import is fine.
+    """
+    if BETA_NOTICE in content:
+        return content
+    lines = content.split("\n")
+    insert_at = 0
+    if lines[0] == "---":
+        insert_at = lines.index("---", 1) + 1
+    lines[insert_at:insert_at] = ["", *BETA_NOTICE.split("\n")]
+    return "\n".join(lines)
+
+
+def _without_beta_notice(content: str) -> str:
+    """Return ``content`` with the beta notice removed (no-op if absent).
+
+    The surrounding newlines are consumed so the neighbours keep a single
+    blank line between them.
+    """
+    return content.replace(f"\n{BETA_NOTICE}\n", "", 1)
+
+
+FULL_CHANGES_HEADING = "## Full list of changes"
+BETA_CHANGES_START = "{/* BETA_CHANGES_START */}"
+BETA_CHANGES_END = "{/* BETA_CHANGES_END */}"
+ALL_CHANGES_END = "{/* ALL_CHANGES_END */}"
+DEPENDENCY_CHANGES_END = "{/* DEPENDENCY_CHANGES_END */}"
+
+
+class _DocsChange(NamedTuple):
+    """One changelog line for the docs page."""
+
+    labels: list[str]
+    ref: str
+    msg: str
+
+    @property
+    def is_dependency(self) -> bool:
+        return any(label in self.labels for label in changelog.DEPENDENCY_LABELS)
+
+
+def _docs_changes(*, version: Version, base: Version) -> list[_DocsChange]:
+    """The formatted changelog entries since ``base``, oldest first."""
+    entries = changelog.collect(
+        project=EsphomeProject,
+        base=f"{base}",
+        base_version=base,
+        head=_bump_branch_name(version),
+        head_version=version,
+    )
+    return [
+        _DocsChange(
+            labels=labels,
+            ref=f"[{EsphomeProject.shortname}#{pr.number}]",
+            msg=changelog.format_change(project=EsphomeProject, pr=pr, labels=labels),
+        )
+        for pr, labels in entries
+    ]
+
+
+def _render_full_changes_block(changes: list[_DocsChange]) -> str:
+    """The generated tail of a fresh changelog page, with merge markers.
+
+    Mirrors the layout of :func:`changelog.generate` with sections, plus the
+    marker comments later cuts use to merge new lines in: the Beta Changes
+    block between the label sections and All changes, the end of the All
+    changes list, and the end of the (headingless) dependency list.
+    """
+    out: list[str] = [
+        "{/* markdownlint-disable MD013 */}",
+        "",
+        FULL_CHANGES_HEADING,
+        "",
+    ]
+    for label, title in changelog.LABEL_HEADERS.items():
+        if label == "cherry-picked":
+            # Beta changes get their own marker-delimited block below.
+            continue
+        msgs = [c.msg for c in changes if label in c.labels]
+        if not msgs:
+            continue
+        out += [f"### {title}", "", *msgs, ""]
+    out += [
+        BETA_CHANGES_START,
+        BETA_CHANGES_END,
+        "",
+        "### All changes",
+        "",
+        "<details>",
+        "<summary></summary>",
+        "",
+        *[c.msg for c in changes if not c.is_dependency],
+        ALL_CHANGES_END,
+        "",
+        "</details>",
+        "",
+        "<details>",
+        "<summary></summary>",
+        "",
+        *[c.msg for c in changes if c.is_dependency],
+        DEPENDENCY_CHANGES_END,
+        "",
+        "</details>",
+    ]
+    return "\n".join(out) + "\n"
+
+
+def _append_full_changes_block(content: str, changes: list[_DocsChange]) -> str:
+    """Append the generated changes block to a page that has none yet."""
+    return content.rstrip("\n") + "\n\n" + _render_full_changes_block(changes)
+
+
+def _insert_patch_section(
+    content: str, *, version: Version, changes: list[_DocsChange]
+) -> str:
+    """Insert a patch release section right before the full-changes list.
+
+    Idempotent: a section for ``version`` that is already on the page is
+    left alone.
+    """
+    if f"## Release {version} " in content:
+        return content
+    if FULL_CHANGES_HEADING not in content:
+        raise EsphomeReleaseError(
+            f"Cannot find '{FULL_CHANGES_HEADING}' in the changelog page"
+        )
+    now = datetime.datetime.now()
+    section = "\n".join(
+        [
+            f"## Release {version} - {now:%B} {now.day}",
+            "",
+            "<details>",
+            "<summary></summary>",
+            "",
+            *[c.msg for c in changes],
+            "",
+            "</details>",
+            "",
+            "",
+        ]
+    )
+    return content.replace(FULL_CHANGES_HEADING, section + FULL_CHANGES_HEADING, 1)
+
+
+def _merge_changes(content: str, changes: list[_DocsChange], *, beta: bool) -> str:
+    """Merge new changelog lines into an existing page.
+
+    Lines already on the page (matched by PR reference) are skipped, so the
+    merge is idempotent. New non-dependency lines go into the Beta Changes
+    block (created on demand; beta cuts only) and the All changes block;
+    dependency lines go into the dependency block.
+    """
+    fresh = [c for c in changes if c.ref not in content]
+    normal = [c.msg for c in fresh if not c.is_dependency]
+    deps = [c.msg for c in fresh if c.is_dependency]
+
+    def insert_before(marker: str, msgs: list[str], text: str) -> str:
+        if marker not in text:
+            raise EsphomeReleaseError(f"Cannot find '{marker}' in the changelog page")
+        return text.replace(marker, "\n".join(msgs) + f"\n{marker}", 1)
+
+    if normal and beta:
+        empty_block = f"{BETA_CHANGES_START}\n{BETA_CHANGES_END}"
+        if empty_block in content:
+            content = content.replace(
+                empty_block,
+                f"{BETA_CHANGES_START}\n### Beta Changes\n\n{BETA_CHANGES_END}",
+                1,
+            )
+        content = insert_before(BETA_CHANGES_END, normal, content)
+    if normal:
+        content = insert_before(ALL_CHANGES_END, normal, content)
+    if deps:
+        content = insert_before(DEPENDENCY_CHANGES_END, deps, content)
+    return content
+
+
+_BETA_CHANGES_BLOCK_RE = re.compile(
+    re.escape(BETA_CHANGES_START) + r"(?s:.*?)" + re.escape(BETA_CHANGES_END) + r"\n\n?"
+)
+
+
+def _remove_beta_changes_block(content: str) -> str:
+    """Drop the Beta Changes block at the stable release (no-op when absent)."""
+    return _BETA_CHANGES_BLOCK_RE.sub("", content, count=1)
+
+
+COMPONENTS_INDEX = "src/content/docs/components/index.mdx"
+
+# An ImgTable row in the components index: ["Name", "/components/.../", ...],
+_IMG_TABLE_ROW_RE = re.compile(r'^\["[^"]+"\s*,\s*"(?P<url>[^"]+)"')
+
+
+def _new_component_table_lines(base: Version) -> list[str]:
+    """ImgTable rows added to the components index since the ``base`` release.
+
+    Diffs the docs components index between the ``base`` release tag and the
+    checked-out bump branch: every ImgTable row added during the cycle is a
+    freshly documented component, so it drafts the changelog's featured table.
+    Rows are deduplicated by URL (one component can be listed in several
+    categories) and rows that merely moved within the file are skipped. Edited
+    rows (e.g. a rename) can still slip through — the MANUAL marker stays on
+    the page so the block gets curated by hand.
+    """
+    try:
+        diff = EsphomeDocsProject.run_git(
+            "diff", f"{base}...HEAD", "--", COMPONENTS_INDEX, fail_ok=True
+        ).decode()
+    except EsphomeReleaseError:
+        gprint(
+            f"Could not diff {COMPONENTS_INDEX} against {base}, "
+            "please fill in the featured components manually"
+        )
+        return []
+
+    removed = {
+        line[1:].strip()
+        for line in diff.split("\n")
+        if line.startswith("-") and not line.startswith("---")
+    }
+    seen: set[str] = set()
+    rows: list[str] = []
+    for line in diff.split("\n"):
+        if not line.startswith("+"):
+            continue
+        row = line[1:].strip()
+        match = _IMG_TABLE_ROW_RE.match(row)
+        if match is None or row in removed or match.group("url") in seen:
+            continue
+        seen.add(match.group("url"))
+        rows.append(row)
+    return rows
+
+
+def _render_changelog_page(changelog_version: Version, featured: list[str]) -> str:
+    """The skeleton of a fresh changelog page: header, import, featured table."""
+    month = f"{datetime.date(changelog_version.major, changelog_version.minor, 1):%B}"
+    rows = "".join(f"  {row}\n" for row in featured)
+    return (
+        "---\n"
+        f'description: "Changelog for ESPHome {changelog_version}."\n'
+        f'title: "ESPHome {changelog_version} - {month} {changelog_version.major}"\n'
+        "pagefind: false\n"
+        f'slug: "changelog/{changelog_version}"\n'
+        "---\n"
+        "\n"
+        'import ImgTable from "@components/ImgTable.astro";\n'
+        "\n"
+        "{/* MANUAL: Add featured components here */}\n"
+        "<ImgTable items={[\n"
+        f"{rows}"
+        "]} />\n"
+    )
+
+
+def _changelog_page_path(version: Version) -> Path:
+    """Path of the cycle's changelog page (always the ``.0`` stable name)."""
+    changelog_version = version.replace(patch=0, beta=0, dev=False)
+    return (
+        EsphomeDocsProject.path
+        / "src"
+        / "content"
+        / "docs"
+        / "changelog"
+        / f"{changelog_version}.mdx"
+    )
+
+
+def _ensure_changelog_page(*, version: Version, base: Version) -> bool:
+    """Create the cycle's changelog page skeleton if it doesn't exist yet.
+
+    Only the first beta actually creates the page; later betas, the stable
+    release and patch releases find it already present and leave it alone.
+    Returns whether the page was created.
+    """
+    path = _changelog_page_path(version)
+    if path.exists():
+        return False
+    changelog_version = version.replace(patch=0, beta=0, dev=False)
+    featured = _new_component_table_lines(base)
+    path.write_text(_render_changelog_page(changelog_version, featured))
+    return True
+
+
 def _docs_insert_changelog(*, version: Version, base: Version):
     branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
-        changelog_md = changelog.generate(
-            project=EsphomeProject,
-            base=f"{base}",
-            base_version=base,
-            head=branch_name,
-            head_version=version,
-            prerelease=version.beta > 0,
-            with_sections=version.beta <= 1,
-        )
+        changelog_path = _changelog_page_path(version)
+        if _ensure_changelog_page(version=version, base=base):
+            gprint(f"Created changelog page {changelog_path.name}")
 
-        from sys import platform
+        content = changelog_path.read_text()
+        changes = _docs_changes(version=version, base=base)
 
-        if platform == "darwin":
-            copy_clipboard(changelog_md)
-            gprint("Changelog has been copied to your clipboard. Please paste it in.")
+        if version.patch > 0 and not version.beta:
+            content = _insert_patch_section(content, version=version, changes=changes)
+        elif FULL_CHANGES_HEADING not in content:
+            content = _append_full_changes_block(content, changes)
         else:
-            # Alternative where pbcopy does not work
-            gprint("Start Changelog:")
-            print(changelog_md)
-            gprint("End Changelog, Please copy and paste changelog")
-        changelog_version = version.replace(patch=0, beta=0, dev=False)
-        changelog_path = (
-            EsphomeDocsProject.path
-            / "src"
-            / "content"
-            / "docs"
-            / "changelog"
-            / f"{changelog_version}.mdx"
-        )
+            content = _merge_changes(content, changes, beta=version.beta > 0)
+
+        if version.beta:
+            content = _with_beta_notice(content)
+        else:
+            content = _remove_beta_changes_block(content)
+            content = _without_beta_notice(content)
+
+        changelog_path.write_text(content)
+        gprint(f"Changelog written to {changelog_path.name}")
         open_vscode(str(changelog_path))
-        confirm("Pasted changelog?")
+        confirm("Does the changelog page look correct?")
         EsphomeDocsProject.commit(f"Update changelog for {version}")
 
 

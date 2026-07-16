@@ -50,25 +50,32 @@ def format_line(*, project: Project, pr: PullRequest, include_author: bool) -> s
     return line
 
 
-def generate(
+def format_change(
+    *,
+    project: Project,
+    pr: PullRequest,
+    labels: List[str],
+    include_author: bool = True,
+) -> str:
+    """One serialized changelog line: the PR line plus its label markers."""
+    parts = [format_line(project=project, pr=pr, include_author=include_author)]
+    parts += [f"({label})" for label in labels if label in LINE_LABELS]
+    return " ".join(parts)
+
+
+def collect(
     *,
     project: Project,
     base: BranchType,
     base_version: Version,
     head: BranchType,
     head_version: Version,
-    prerelease: bool,
-    gh_release: bool = False,
-    with_sections: bool = True,
-    include_author: bool = True,
-):
-    gprint("Generating changelog...")
+) -> List[Tuple[PullRequest, List[str]]]:
+    """The changelog-relevant PRs between two refs, sorted by merge time.
 
-    # Here we store the lines to insert for each label
-    # Mapping from label to list of lines
-    label_groups: Dict[str, List[str]] = defaultdict(list)
-
-    # Create a list of all log lines in all relevant projects
+    Each entry is the PR paired with its effective labels (see
+    :func:`resolve_changelog_labels`); excluded PRs are dropped.
+    """
     list_ = project.prs_between(base, head)
 
     lines: List[Tuple[PullRequest, List[str]]] = []
@@ -95,6 +102,35 @@ def generate(
 
     # Sort log lines by when the PR was merged
     lines.sort(key=lambda x: x[0].merged_at)
+    return lines
+
+
+def generate(
+    *,
+    project: Project,
+    base: BranchType,
+    base_version: Version,
+    head: BranchType,
+    head_version: Version,
+    prerelease: bool,
+    gh_release: bool = False,
+    with_sections: bool = True,
+    include_author: bool = True,
+):
+    gprint("Generating changelog...")
+
+    # Here we store the lines to insert for each label
+    # Mapping from label to list of lines
+    label_groups: Dict[str, List[str]] = defaultdict(list)
+
+    # Create a list of all log lines in all relevant projects
+    lines = collect(
+        project=project,
+        base=base,
+        base_version=base_version,
+        head=head,
+        head_version=head_version,
+    )
 
     is_patch = (
         head_version is not None and head_version.patch != 0 and not head_version.beta
@@ -105,10 +141,9 @@ def generate(
 
     # Now go through the lines struct and serialize them
     for pr, labels in lines:
-        parts = [format_line(project=project, pr=pr, include_author=include_author)]
-        parts += [f"({label})" for label in labels if label in LINE_LABELS]
-
-        msg = " ".join(parts)
+        msg = format_change(
+            project=project, pr=pr, labels=labels, include_author=include_author
+        )
 
         if (
             not with_sections
