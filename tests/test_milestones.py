@@ -59,10 +59,10 @@ class FakeMilestone:
 
 
 def _all_projects(cutting):
+    """The projects that get release milestones (the issues repo does not)."""
     return [
         cutting.EsphomeProject,
         cutting.EsphomeDocsProject,
-        cutting.EsphomeIssuesProject,
     ]
 
 
@@ -168,7 +168,6 @@ def test_ensure_cycle_milestone_ensures_on_all_projects(cutting, monkeypatch):
     assert calls == [
         ("esphome", "2026.7.0", None),
         ("docs", "2026.7.0", None),
-        ("issues", "2026.7.0", None),
     ]
 
 
@@ -183,7 +182,6 @@ def test_open_next_cycle_milestone(cutting, monkeypatch):
     assert calls == [
         ("esphome", "2026.8.0", due),
         ("docs", "2026.8.0", due),
-        ("issues", "2026.8.0", due),
     ]
 
 
@@ -197,7 +195,6 @@ def test_open_next_cycle_milestone_december_rolls_over(cutting, monkeypatch):
     assert calls == [
         ("esphome", "2027.1.0", due),
         ("docs", "2027.1.0", due),
-        ("issues", "2027.1.0", due),
     ]
 
 
@@ -226,7 +223,6 @@ def test_close_cycle_milestone_first_release(cutting, monkeypatch):
     assert calls == [
         ("esphome", "2026.7.1", None),
         ("docs", "2026.7.1", None),
-        ("issues", "2026.7.1", None),
     ]
     for old in old_milestones.values():
         assert old.updates == [{"state": "closed"}]
@@ -253,5 +249,4 @@ def test_close_cycle_milestone_patch_release(cutting, monkeypatch):
     assert calls == [
         ("esphome", "2026.7.2", None),
         ("docs", "2026.7.2", None),
-        ("issues", "2026.7.2", None),
     ]

@@ -12,7 +12,7 @@ from .changelog_url import (
 )
 from .exceptions import EsphomeReleaseError
 from .model import Branch, BranchType, Version
-from .project import EsphomeDocsProject, EsphomeIssuesProject, EsphomeProject, Project
+from .project import EsphomeDocsProject, EsphomeProject, Project
 from .util import (
     confirm,
     copy_clipboard,
@@ -176,7 +176,7 @@ def _ensure_cycle_milestone(version: Version):
     missing.
     """
     title = _cycle_milestone_title(version)
-    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+    for proj in [EsphomeProject, EsphomeDocsProject]:
         proj.ensure_milestone(title)
 
 
@@ -194,7 +194,7 @@ def _open_next_cycle_milestone(version: Version):
     next_year, next_month = _next_cycle_year_month(version)
     title = f"{next_year}.{next_month}.0"
     due_on = milestone_due_on(feature_freeze_date(next_year, next_month))
-    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+    for proj in [EsphomeProject, EsphomeDocsProject]:
         proj.ensure_milestone(title, due_on=due_on)
 
 
@@ -237,7 +237,7 @@ def _close_previous_month_patch_milestones(version: Version):
     release.
     """
     prev_year, prev_month = _previous_cycle_year_month(version)
-    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+    for proj in [EsphomeProject, EsphomeDocsProject]:
         for milestone in proj.get_open_milestones():
             try:
                 ms_version = Version.parse(milestone.title)
@@ -260,7 +260,7 @@ def _set_cycle_milestone_due(version: Version, due: datetime.date):
     """Set the due date on the cycle milestone across all projects."""
     title = _cycle_milestone_title(version)
     due_on = milestone_due_on(due)
-    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+    for proj in [EsphomeProject, EsphomeDocsProject]:
         milestone = proj.get_milestone_by_title(title)
         if milestone is not None:
             milestone.update(due_on=due_on)
@@ -276,7 +276,7 @@ def _close_cycle_milestone(*, version: Version, next_version: Version):
     if version.patch == 0:
         _open_next_cycle_milestone(version)
 
-    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+    for proj in [EsphomeProject, EsphomeDocsProject]:
         proj.ensure_milestone(str(next_version))
 
         old_milestone = proj.get_milestone_by_title(_cycle_milestone_title(version))
