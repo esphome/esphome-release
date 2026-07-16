@@ -115,6 +115,7 @@ def _stub_cut_helpers(cutting, monkeypatch, recorder):
         "_create_prs",
         "_ensure_cycle_milestone",
         "_set_cycle_milestone_due",
+        "_open_next_cycle_milestone",
         "_close_previous_month_patch_milestones",
         "_clear_merged_prs_from_cycle_milestone",
         "_close_cycle_milestone",
@@ -148,9 +149,15 @@ def test_cut_beta_release_pushes_merge_branches(cutting, monkeypatch):
 
     recorder = []
     _stub_cut_helpers(cutting, monkeypatch, recorder)
+    opened = []
+    monkeypatch.setattr(
+        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
+    )
 
     cutting.cut_beta_release(Version.parse("2026.6.0b2"))
     assert recorder == [True]
+    # Only the first beta opens the next cycle's milestone.
+    assert opened == []
 
 
 def test_cut_first_beta_pushes_merge_branches(cutting, monkeypatch):
@@ -159,6 +166,10 @@ def test_cut_first_beta_pushes_merge_branches(cutting, monkeypatch):
 
     recorder = []
     _stub_cut_helpers(cutting, monkeypatch, recorder)
+    opened = []
+    monkeypatch.setattr(
+        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
+    )
 
     # The first-beta path bumps and pushes the dev branch of each project.
     for proj in (cutting.EsphomeProject, cutting.EsphomeDocsProject):
@@ -170,3 +181,4 @@ def test_cut_first_beta_pushes_merge_branches(cutting, monkeypatch):
 
     cutting.cut_beta_release(Version.parse("2026.6.0b1"))
     assert recorder == [True]
+    assert opened == [Version.parse("2026.6.0b1")]

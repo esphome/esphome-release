@@ -168,6 +168,32 @@ class Project:
     ) -> Milestone:
         return self.repo.create_milestone(title, due_on=due_on)
 
+    def ensure_milestone(
+        self, title: str, *, due_on: Optional[str] = None
+    ) -> Milestone:
+        """Get the open milestone with ``title``, creating it if missing.
+
+        GitHub rejects duplicate milestone titles with a 422, so a milestone
+        that was already created (e.g. manually) must be looked up, not
+        re-created. If ``due_on`` is given and the existing milestone is due on
+        a different day (or has no due date), it is corrected.
+        """
+        milestone = self.get_milestone_by_title(title)
+        if milestone is None:
+            return self.create_milestone(title, due_on=due_on)
+        if due_on is not None:
+            # GitHub normalizes due_on to midnight US/Pacific, so the returned
+            # timestamp never matches the one sent; compare calendar days only.
+            wanted_day = due_on.split("T", 1)[0]
+            actual_day = (
+                milestone.due_on.date().isoformat()
+                if milestone.due_on is not None
+                else None
+            )
+            if actual_day != wanted_day:
+                milestone.update(due_on=due_on)
+        return milestone
+
     def get_open_prs_for_milestone(self, milestone: Milestone) -> List[PullRequest]:
         """Get all open PRs assigned to a milestone."""
         if milestone is None:

@@ -170,14 +170,32 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 def _ensure_cycle_milestone(version: Version):
     """Make sure the shared cycle milestone exists.
 
-    The milestone is normally opened when the previous ``.0`` release goes out
-    (see :func:`_close_cycle_milestone`). This idempotent guard runs at the
-    first beta to cover the very first cycle or a milestone that went missing.
+    The milestone is normally opened when the previous cycle's first beta is
+    cut (see :func:`_open_next_cycle_milestone`). This idempotent guard runs at
+    the first beta to cover the very first cycle or a milestone that went
+    missing.
     """
     title = _cycle_milestone_title(version)
     for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
-        if proj.get_milestone_by_title(title) is None:
-            proj.create_milestone(title)
+        proj.ensure_milestone(title)
+
+
+def _open_next_cycle_milestone(version: Version):
+    """Open the ``.0`` cycle milestone for the month after ``version``.
+
+    Runs as soon as the first beta is cut — from that moment ``dev`` is the
+    next cycle, so PRs can immediately be marked for it (prioritized for
+    review/merge). Its due date is set to the new-component/feature merge
+    deadline (the Monday before the second Wednesday of that month).
+
+    Idempotent: a milestone that already exists (e.g. created manually) is
+    reused, with its due date corrected if it doesn't match.
+    """
+    next_year, next_month = _next_cycle_year_month(version)
+    title = f"{next_year}.{next_month}.0"
+    due_on = milestone_due_on(feature_freeze_date(next_year, next_month))
+    for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
+        proj.ensure_milestone(title, due_on=due_on)
 
 
 def _next_cycle_year_month(version: Version) -> tuple[int, int]:
@@ -251,22 +269,15 @@ def _set_cycle_milestone_due(version: Version, due: datetime.date):
 def _close_cycle_milestone(*, version: Version, next_version: Version):
     """Close the current cycle milestone and open the next patch milestone.
 
-    When a ``.0`` release goes out, also open the next month's ``.0`` cycle
-    milestone so PRs can be marked for it (prioritized for review/merge) during
-    the upcoming dev cycle, before the first beta is cut. Its due date is set to
-    the new-component/feature merge deadline (the Monday before the second
-    Wednesday of that month).
+    When a ``.0`` release goes out, also make sure the next month's ``.0``
+    cycle milestone exists. It is normally opened when the first beta is cut
+    (see :func:`_open_next_cycle_milestone`); this is just a safety net.
     """
-    open_next_cycle = version.patch == 0
-    if open_next_cycle:
-        next_year, next_month = _next_cycle_year_month(version)
-        next_cycle_title = f"{next_year}.{next_month}.0"
-        next_cycle_due = milestone_due_on(feature_freeze_date(next_year, next_month))
+    if version.patch == 0:
+        _open_next_cycle_milestone(version)
 
     for proj in [EsphomeProject, EsphomeDocsProject, EsphomeIssuesProject]:
-        proj.create_milestone(str(next_version))
-        if open_next_cycle:
-            proj.create_milestone(next_cycle_title, due_on=next_cycle_due)
+        proj.ensure_milestone(str(next_version))
 
         old_milestone = proj.get_milestone_by_title(_cycle_milestone_title(version))
         if old_milestone is not None:
@@ -398,6 +409,8 @@ def cut_beta_release(version: Version):
         # Beta is now being cut, so the milestone is due on release day: the
         # third Wednesday of the month.
         _set_cycle_milestone_due(version, release_date(version.major, version.minor))
+        # dev is now the next cycle, so open its milestone right away.
+        _open_next_cycle_milestone(version)
         # The previous month's patch line is done; close its leftover milestones.
         _close_previous_month_patch_milestones(version)
         # The merge already brought every merged milestone PR into the release;
