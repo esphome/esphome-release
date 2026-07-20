@@ -192,6 +192,27 @@ def release_notes(with_sections, include_author, base_ref, head_ref, head_versio
         gprint("End Changelog, Please copy and paste changelog")
 
 
+@cli.command(help="Verify a milestone is complete (all merged PRs present in the release).")
+@click.argument("version")
+@click.option("--base", default=None, help="Base version to compare against")
+@click.option(
+    "--head",
+    default=None,
+    help="Ref that holds the release (defaults to the version tag)",
+)
+def verify_milestone(version, base, head):
+    version = Version.parse(version)
+    if base is None:
+        base_str = click.prompt(
+            "Please enter base version",
+            default=str(EsphomeProject.latest_release(include_prereleases=False)),
+        )
+        base = Version.parse(base_str)
+    else:
+        base = Version.parse(base)
+    cutting.verify_milestone(version, base=base, head=head)
+
+
 @cli.command(help="Cherry-pick from milestone")
 @click.argument("milestone")
 def milestone_cherry_pick(milestone):
