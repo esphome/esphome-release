@@ -48,6 +48,12 @@ def _issue_is_cherry_picked(issue: Issue) -> bool:
 
 
 class Project:
+    # Safety bound on the closed-PR scan used to recover milestone PRs GitHub's
+    # index dropped (see _recover_drifted_milestone_prs). A cycle's milestone
+    # PRs cluster within days, so a few hundred recent closed PRs always covers
+    # a patch/beta window; the cap just stops a runaway scan.
+    MILESTONE_SCAN_LIMIT = 500
+
     def __init__(
         self,
         *,
@@ -221,6 +227,95 @@ class Project:
         ]
         return sorted(self.get_prs(numbers), key=lambda pr: pr.merged_at)
 
+    def _find_drifted_milestone_prs(
+        self, milestone: Milestone, known: set
+    ) -> List[Issue]:
+        """Identify milestone PRs GitHub's issues index silently dropped.
+
+        ``repo.issues(milestone=...)`` — and the search API — can omit PRs whose
+        own ``milestone`` field points here, an index that lags the PR record
+        (observed 2026-07: the 2026.7.1 listing returned 35 of the 39 PRs
+        actually on the milestone, silently dropping 4 merged patch PRs from the
+        cut). The milestone's own counters stay correct, so a shortfall of the
+        closed listing against ``closed_issues`` triggers a bounded scan of
+        closed PRs that trusts each PR's own milestone (the reliable source) to
+        find the ones the index dropped. ``known`` is the set of PR numbers the
+        index already returned. Returns the missing PRs as issues (may be fewer
+        than the shortfall if the scan hits its cap — the caller warns).
+        """
+        missing = milestone.closed_issues - len(known)
+        if missing <= 0:
+            return []
+
+        found: List[Issue] = []
+        scanned = 0
+        for pull in self.repo.pull_requests(
+            state="closed", sort="updated", direction="desc"
+        ):
+            if len(found) >= missing or scanned >= self.MILESTONE_SCAN_LIMIT:
+                break
+            scanned += 1
+            if pull.number in known:
+                continue
+            pull_milestone = pull.milestone
+            if pull_milestone is None or pull_milestone.number != milestone.number:
+                continue
+            # pull_requests() only yields PRs, so this number is always a PR.
+            found.append(self.repo.issue(pull.number))
+        return found
+
+    def _resolve_milestone_index_drift(self, milestone: Milestone) -> List[Issue]:
+        """Hand milestone PRs the index dropped to the user to cherry-pick.
+
+        On a shortfall (see :meth:`_find_drifted_milestone_prs`), print the
+        missing PRs with ready-to-run ``git cherry-pick`` commands and drop into
+        a subshell so the user applies them, resolves any conflicts and confirms
+        — the same manual flow used when a cherry-pick or merge conflicts,
+        rather than hard-aborting the cut. Returns the identified PRs as issues
+        so the caller labels them cherry-picked alongside the auto-picked ones.
+        """
+        # Count all closed issues the index returned (PRs and plain issues) so a
+        # plain issue on the milestone isn't mistaken for a dropped PR.
+        known = {
+            issue.number
+            for issue in self.repo.issues(milestone=milestone.number, state="closed")
+        }
+        missing = milestone.closed_issues - len(known)
+        if missing <= 0:
+            return []
+
+        drifted = self._find_drifted_milestone_prs(milestone, known)
+        pulls = self.get_prs([issue.number for issue in drifted])
+        indexed = milestone.closed_issues - missing
+        lines = [
+            f"Milestone '{milestone.title}' reports {milestone.closed_issues} "
+            f"closed PR(s) but GitHub's milestone index only listed {indexed}.",
+            f"{missing} PR(s) are missing from the cut due to milestone index "
+            "drift (the PRs carry the milestone but the index dropped them).",
+            "",
+            "Cherry-pick the missing PR(s) into this branch:",
+        ]
+        for pull in pulls:
+            lines.append(
+                f"    git cherry-pick {pull.merge_commit_sha}"
+                f"    # #{pull.number} {pull.title}"
+            )
+        if len(drifted) < missing:
+            lines.append("")
+            lines.append(
+                f"WARNING: only identified {len(drifted)} of {missing} missing "
+                f"PR(s); open the '{milestone.title}' milestone on GitHub, find "
+                "any others (their own milestone is set) and cherry-pick them too."
+            )
+        lines += [
+            "",
+            " - resolve any conflicts, then git add . && git commit",
+            " - confirm every missing PR is now cherry-picked in",
+            " - exit the shell with Ctrl+D",
+        ]
+        self._spawn_subshell(run="git log --oneline -15", print_lines=lines)
+        return drifted
+
     def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
 
@@ -229,9 +324,10 @@ class Project:
         if milestone is None:
             return []
 
+        listed = self._milestone_pr_issues(milestone, "closed")
         pick_issues: List[Issue] = []
 
-        for issue in self._milestone_pr_issues(milestone, "closed"):
+        for issue in listed:
             # Merged state and labels come from the issue listing payload;
             # only the PRs that will actually be picked are fetched (in
             # parallel, for their merge_commit_sha) below.
@@ -260,7 +356,11 @@ class Project:
         for pull, issue in to_pick:
             self.cherry_pick(pull.merge_commit_sha)
 
-        return [x[1] for x in to_pick]
+        picked = [x[1] for x in to_pick]
+        # Any PRs the milestone index silently dropped are handled by hand in a
+        # subshell (they land after the auto-picked ones, before the version bump).
+        drifted = self._resolve_milestone_index_drift(milestone)
+        return picked + drifted
 
     def mark_pulls_cherry_picked(self, to_pick: List[Issue]):
         """Mark all PRs cherry-picked by adding a label."""

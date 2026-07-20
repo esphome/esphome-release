@@ -117,6 +117,19 @@ class FakePull:
         self.merge_commit_sha = merge_commit_sha or f"sha{number}"
 
 
+class FakeShortPull:
+    """A closed PR as it appears in the repo-wide ``pull_requests`` listing the
+    drift-recovery scan walks: a number plus the PR's own milestone (or None)."""
+
+    def __init__(self, number: int, milestone_number: Optional[int] = None):
+        self.number = number
+        self.milestone = (
+            types.SimpleNamespace(number=milestone_number)
+            if milestone_number is not None
+            else None
+        )
+
+
 class FakeRepo:
     def __init__(
         self,
@@ -125,6 +138,8 @@ class FakeRepo:
         closed_issues: Optional[List[FakeIssue]] = None,
         open_issues: Optional[List[FakeIssue]] = None,
         pulls: Optional[dict] = None,
+        pull_listing: Optional[List[FakeShortPull]] = None,
+        issues_by_number: Optional[dict] = None,
     ):
         self._milestones = milestones or []
         self._issues = {
@@ -132,7 +147,10 @@ class FakeRepo:
             "open": open_issues or [],
         }
         self._pulls = pulls or {}
+        self._pull_listing = pull_listing or []
+        self._issues_by_number = issues_by_number or {}
         self.pull_request_calls: List[int] = []
+        self.pull_requests_calls: List[tuple] = []
 
     def milestones(self, state: str) -> list:
         assert state == "open"
@@ -148,8 +166,17 @@ class FakeRepo:
             raise _not_found_error()
         return pull
 
+    def pull_requests(self, *, state=None, sort=None, direction=None) -> list:
+        self.pull_requests_calls.append((state, sort, direction))
+        return list(self._pull_listing)
 
-MILESTONE = types.SimpleNamespace(title="2026.7.0", number=5)
+    def issue(self, number: int) -> FakeIssue:
+        return self._issues_by_number[number]
+
+
+MILESTONE = types.SimpleNamespace(
+    title="2026.7.0", number=5, closed_issues=5, open_issues=0
+)
 
 
 def test_get_next_beta_prs_no_milestone(modules, tmp_path):
@@ -323,6 +350,154 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
     # Only the actually-picked PRs were fetched from the API.
     assert sorted(repo.pull_request_calls) == [4, 5]
     assert len(prompts) == 2 and "Unmerged PR" in prompts[0]
+
+
+def _milestone(*, closed_issues: int, open_issues: int = 0) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        title="2026.7.1", number=7, closed_issues=closed_issues, open_issues=open_issues
+    )
+
+
+def _capture_subshell(proj, monkeypatch) -> list:
+    """Replace the interactive subshell with a recorder of its kwargs."""
+    calls = []
+    monkeypatch.setattr(proj, "_spawn_subshell", lambda **kw: calls.append(kw))
+    return calls
+
+
+def test_resolve_drift_no_shortfall(modules, tmp_path, monkeypatch):
+    """When the listing already matches the counter, no shell is spawned."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+    proj._repo = FakeRepo(closed_issues=[FakeIssue(1, pr=True), FakeIssue(2)])
+    calls = _capture_subshell(proj, monkeypatch)
+
+    assert proj._resolve_milestone_index_drift(_milestone(closed_issues=2)) == []
+    assert calls == []
+    assert proj._repo.pull_requests_calls == []
+
+
+def test_find_drifted_milestone_prs_skips_and_stops(modules, tmp_path):
+    """The scan skips already-known, milestone-less and other-milestone PRs and
+    stops once the shortfall is met."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+
+    dropped = FakeIssue(11, pr=True, title="Dropped")
+    proj._repo = FakeRepo(
+        pull_listing=[
+            FakeShortPull(10, milestone_number=7),  # already known -> skip
+            FakeShortPull(98, milestone_number=None),  # no milestone -> skip
+            FakeShortPull(99, milestone_number=8),  # other milestone -> skip
+            FakeShortPull(11, milestone_number=7),  # the dropped PR -> found
+            FakeShortPull(12, milestone_number=7),  # never reached: shortfall met
+        ],
+        issues_by_number={11: dropped},
+    )
+
+    # Counter says 2, one already known (#10) -> one missing.
+    found = proj._find_drifted_milestone_prs(_milestone(closed_issues=2), {10})
+    assert found == [dropped]
+    assert proj._repo.pull_requests_calls == [("closed", "updated", "desc")]
+
+
+def test_find_drifted_milestone_prs_no_shortfall(modules, tmp_path):
+    """No shortfall -> empty result and no closed-PR scan at all."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+    proj._repo = FakeRepo()
+
+    assert proj._find_drifted_milestone_prs(_milestone(closed_issues=1), {10}) == []
+    assert proj._repo.pull_requests_calls == []
+
+
+def test_resolve_drift_spawns_shell_with_cherry_pick_commands(
+    modules, tmp_path, monkeypatch
+):
+    """A shortfall prints the missing PR with a ready cherry-pick command and
+    drops into the manual-fix subshell; the identified PR is returned so the
+    caller still labels it cherry-picked."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+
+    dropped = FakeIssue(11, pr=True, merged_at="2026-07-01T00:00:00Z", title="Dropped")
+    proj._repo = FakeRepo(
+        closed_issues=[FakeIssue(10, pr=True, merged_at="2026-07-02T00:00:00Z")],
+        pull_listing=[FakeShortPull(11, milestone_number=7)],
+        issues_by_number={11: dropped},
+        pulls={11: FakePull(11, title="Dropped fix", merge_commit_sha="deadbeef")},
+    )
+    calls = _capture_subshell(proj, monkeypatch)
+
+    result = proj._resolve_milestone_index_drift(_milestone(closed_issues=2))
+
+    assert result == [dropped]
+    assert len(calls) == 1
+    body = "\n".join(calls[0]["print_lines"])
+    assert "1 PR(s) are missing" in body
+    assert "git cherry-pick deadbeef" in body
+    assert "#11 Dropped fix" in body
+    assert "WARNING" not in body  # fully identified
+
+
+def test_resolve_drift_partial_identification_warns(modules, tmp_path, monkeypatch):
+    """If the bounded scan can only find some of the missing PRs, it still drops
+    into the shell (never aborts) and warns the operator to find the rest."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+    monkeypatch.setattr(proj, "MILESTONE_SCAN_LIMIT", 2)
+
+    dropped = FakeIssue(11, pr=True, title="Dropped")
+    proj._repo = FakeRepo(
+        closed_issues=[FakeIssue(10, pr=True, merged_at="2026-07-02T00:00:00Z")],
+        # Two missing, but the cap trips after finding only one.
+        pull_listing=[
+            FakeShortPull(11, milestone_number=7),  # found
+            FakeShortPull(91, milestone_number=8),  # skipped, but counts toward cap
+            FakeShortPull(92, milestone_number=7),  # never reached: cap hit
+        ],
+        issues_by_number={11: dropped},
+        pulls={11: FakePull(11, title="Dropped fix")},
+    )
+    calls = _capture_subshell(proj, monkeypatch)
+
+    result = proj._resolve_milestone_index_drift(_milestone(closed_issues=3))
+
+    assert result == [dropped]
+    body = "\n".join(calls[0]["print_lines"])
+    assert "only identified 1 of 2" in body
+
+
+def test_cherry_pick_from_milestone_hands_drift_to_shell(
+    modules, tmp_path, monkeypatch
+):
+    """End to end: index-listed PRs are auto-picked; a dropped PR is left for the
+    user in the subshell (not auto-picked) but still returned for labeling."""
+    project_mod, _ = modules
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+
+    dropped = FakeIssue(11, pr=True, merged_at="2026-07-01T00:00:00Z", title="Dropped")
+    proj._repo = FakeRepo(
+        closed_issues=[FakeIssue(10, pr=True, merged_at="2026-07-02T00:00:00Z")],
+        pull_listing=[FakeShortPull(11, milestone_number=7)],
+        issues_by_number={11: dropped},
+        pulls={
+            10: FakePull(10, merged_at=datetime(2026, 7, 2)),
+            11: FakePull(11, merged_at=datetime(2026, 7, 1), title="Dropped"),
+        },
+    )
+    calls = _capture_subshell(proj, monkeypatch)
+
+    picked_shas = []
+    monkeypatch.setattr(proj, "cherry_pick", picked_shas.append)
+
+    result = proj.cherry_pick_from_milestone(_milestone(closed_issues=2))
+
+    # Only the index-listed #10 is auto-picked; #11 is handed to the shell.
+    assert picked_shas == ["sha10"]
+    assert len(calls) == 1
+    # Both are returned so both get the cherry-picked label.
+    assert [issue.number for issue in result] == [10, 11]
 
 
 def test_remove_merged_prs_from_milestone(modules, tmp_path):
