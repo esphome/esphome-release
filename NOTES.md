@@ -65,6 +65,24 @@ All other stable releases:
 
 The same is repeated for `esphome.io` with `s/dev/next/` and `s/release/current/`
 
+## Milestone completeness check
+
+Before a release is confirmed, the script verifies that **every merged PR on the
+`{version}` milestone is actually present in the `bump-{version}` branch**. This
+guards against commits being left behind — historically a couple of PRs that were
+merged and milestoned still missed a release because a cherry-pick was skipped or
+commits stayed in a beta.
+
+The check compares the merged PR numbers on the milestone against the PR numbers
+reachable in `git log {base}..bump-{version}` and warns about any that are
+missing, then asks for confirmation before continuing.
+
+You can also run it standalone against an already-tagged release:
+
+```bash
+$ esphomerelease verify-milestone 1.15.0 --base 1.14.5
+```
+
 ## PR Merging and Releasing
 
 The PR on GitHub can be used to let the CI check if everything's ok. When ready, merge the PR (DO NOT SQUASH, branch protection rules should already disallow this).

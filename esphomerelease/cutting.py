@@ -14,6 +14,7 @@ from .changelog_url import (
     use_website_link_for_release,
 )
 from .exceptions import EsphomeReleaseError
+from .milestone import find_missing_milestone_prs, milestone_title_candidates
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
 from .util import (
@@ -83,6 +84,86 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
             default=True,
         ):
             raise EsphomeReleaseError("Aborted: open PRs on milestone")
+
+
+def verify_milestone(version: Version, *, base: Version, head: BranchType = None):
+    """Verify every merged PR on the milestone is present in the release.
+
+    For each project, compares the PRs attached to the ``version`` milestone
+    against the PRs actually reachable in ``base..head`` (parsed from the git
+    log). Any merged milestone PR that is not present is a commit that was
+    "left behind" — exactly the failure mode that left 2 commits out of v1.15.
+
+    head: the ref that will become the release. During a cut this is the
+      ``bump-<version>`` branch; for an after-the-fact check it defaults to the
+      release tag (``str(version)``).
+
+    Two milestone models exist: a per-version milestone (title == ``str(version)``)
+    and a single per-cycle milestone shared by every beta plus the final release
+    (title == the version with beta/dev stripped). The cycle title is tried first
+    and the per-version title is the fallback, so the guard resolves a milestone
+    under either model. Note: when the per-cycle model also strips merged PRs from
+    the milestone at first beta, this check only sees PRs still attached at cut
+    time — a deeper fix would need the full set of PRs ever milestoned this cycle.
+    """
+    if head is None:
+        head = str(version)
+
+    problems = []
+    unresolved = []
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone = None
+        for title in milestone_title_candidates(version):
+            milestone = proj.get_milestone_by_title(title)
+            if milestone is not None:
+                break
+        if milestone is None:
+            # No milestone resolved under either title model. Don't skip
+            # silently — that would print a green "verified" having checked
+            # nothing, the exact false-confidence this guard exists to prevent.
+            unresolved.append(proj)
+            continue
+        milestone_prs = proj.get_milestone_pr_numbers(milestone)
+        release_prs = proj.prs_between(f"{base}", head)
+        for number in find_missing_milestone_prs(milestone_prs, release_prs):
+            problems.append((proj, number))
+
+    if not problems and not unresolved:
+        gprint(
+            f"Milestone {version} verified: all merged milestone PRs are in the release."
+        )
+        return
+
+    if unresolved:
+        gprint(click.style(
+            f"Warning: could not resolve a {version} milestone for "
+            f"{len(unresolved)} project(s) — nothing was verified for them:",
+            fg="yellow",
+        ))
+        tried = ", ".join(milestone_title_candidates(version))
+        for proj in unresolved:
+            gprint(f"  - [{proj.shortname}] tried: {tried}")
+
+    if problems:
+        gprint(click.style(
+            f"Warning: {len(problems)} merged milestone PR(s) missing from the {version} release:",
+            fg="yellow",
+        ))
+        for proj, number in problems:
+            gprint(f"  - [{proj.shortname}] #{number}: {proj.repo.html_url}/pull/{number}")
+
+    # Mirror the open-PR check: offer an explicit abort so the operator can
+    # stop, cherry-pick the missing PRs, and re-run — rather than being forced
+    # to either continue or Ctrl-C. Default is to abort.
+    if not click.confirm(
+        click.style(
+            "Milestone is incomplete. Cherry-pick the missing PRs and re-run, "
+            "or continue anyway?",
+            fg="red",
+        ),
+        default=False,
+    ):
+        raise EsphomeReleaseError("Aborted: incomplete milestone")
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
@@ -691,6 +772,7 @@ def cut_beta_release(version: Version):
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
+    verify_milestone(version, base=base, head=_bump_branch_name(version))
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.BETA)
     _ensure_cycle_milestone(version)
@@ -743,6 +825,7 @@ def cut_release(version: Version):
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
+    verify_milestone(version, base=base, head=_bump_branch_name(version))
     _confirm_correct()
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
     _close_cycle_milestone(version=version, next_version=version.next_patch_version)
