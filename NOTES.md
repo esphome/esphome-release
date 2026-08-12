@@ -20,6 +20,8 @@ The first beta is cut by merging `dev`, which brings in every PR already merged 
 
 Open PRs on the milestone are always reported when cutting. For betas this is only a warning and cutting continues; for full releases it blocks until the milestone is clear (or you abort).
 
+That check only sees PRs carrying the milestone, and docs PRs often have none, so every cut (beta and full) also checks the docs PRs linked from the bodies of the code PRs it is about to pick. A code PR and a docs PR only count as a pair when each body references the other; a one-way mention is reported but ignored. Any confirmed docs PR that is still unmerged blocks the cut with a "Check again?" prompt, before anything is touched on disk, so merge it (or abort) and re-check.
+
 ## Prerequisites
 
 Before any of the other steps, it's good to make sure the local repositories are all up to date.

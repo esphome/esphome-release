@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import click
+from github3.pulls import PullRequest
 
 from . import changelog, docs
 from .changelog_url import (
@@ -13,6 +14,7 @@ from .changelog_url import (
     changelog_website_url,
     use_website_link_for_release,
 )
+from .docs_pr_links import extract_docs_pr_numbers, is_confirmed_pair
 from .exceptions import EsphomeReleaseError
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
@@ -83,6 +85,99 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
             default=True,
         ):
             raise EsphomeReleaseError("Aborted: open PRs on milestone")
+
+
+DocsPRPair = tuple[PullRequest, PullRequest]
+
+
+def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPRPair]]:
+    """Pair the code PRs going into this cut with the docs PRs they link to.
+
+    Returns ``(unmerged, unconfirmed)`` as ``(code_pr, docs_pr)`` tuples:
+    confirmed pairs whose docs PR has not merged yet, and one-way references
+    where the docs PR does not link back (informational only).
+
+    :func:`_check_open_milestone_prs` only sees PRs that carry the milestone,
+    and docs PRs frequently have none at all, so nothing else in the cut notices
+    a code PR whose documentation is still open.
+    """
+    milestone = EsphomeProject.get_milestone_by_title(_cycle_milestone_title(version))
+    if milestone is None:
+        return [], []
+
+    # Every pass re-fetches: the user is expected to merge docs PRs while the
+    # "Check again?" loop runs, so cached PR payloads would report stale state.
+    EsphomeProject.pr_cache.clear()
+    EsphomeDocsProject.pr_cache.clear()
+
+    references: list[tuple[PullRequest, int]] = []
+    for code_pr in EsphomeProject.get_next_beta_prs_for_milestone(milestone):
+        for docs_number in extract_docs_pr_numbers(code_pr.body):
+            references.append((code_pr, docs_number))
+
+    if not references:
+        return [], []
+
+    docs_numbers = sorted({number for _, number in references})
+    docs_prs = dict(zip(docs_numbers, EsphomeDocsProject.get_prs(docs_numbers)))
+
+    unmerged: list[DocsPRPair] = []
+    unconfirmed: list[DocsPRPair] = []
+    for code_pr, docs_number in references:
+        docs_pr = docs_prs[docs_number]
+        if not is_confirmed_pair(
+            docs_body=docs_pr.body,
+            docs_number=docs_number,
+            code_body=code_pr.body,
+            code_number=code_pr.number,
+        ):
+            unconfirmed.append((code_pr, docs_pr))
+        elif docs_pr.merged_at is None:
+            unmerged.append((code_pr, docs_pr))
+    return unmerged, unconfirmed
+
+
+def _check_linked_docs_prs(version: Version):
+    """Block the cut while a confirmed docs PR for this release is unmerged.
+
+    Shipping the code without its documentation is the failure this guards
+    against, so unlike :func:`_check_open_milestone_prs` this always blocks: the
+    user merges the docs PR(s) and answers "Check again?", or aborts the cut.
+    """
+    while True:
+        unmerged, unconfirmed = _find_docs_pr_pairs(version)
+
+        if unconfirmed:
+            gprint(
+                f"Note: {len(unconfirmed)} one-way docs PR reference(s) (no "
+                "back-link, so not treated as a pair):",
+                fg="yellow",
+            )
+            for code_pr, docs_pr in unconfirmed:
+                gprint(
+                    f"  - esphome#{code_pr.number} mentions docs#{docs_pr.number}: "
+                    f"{docs_pr.title} ({docs_pr.html_url})",
+                    fg="yellow",
+                )
+
+        if not unmerged:
+            return
+
+        gprint(click.style(
+            f"Error: Found {len(unmerged)} unmerged docs PR(s) for PRs in this release:",
+            fg="red",
+        ))
+        for code_pr, docs_pr in unmerged:
+            gprint(
+                f"  - esphome#{code_pr.number} {code_pr.title}\n"
+                f"      needs docs#{docs_pr.number}: {docs_pr.title} ({docs_pr.html_url})"
+            )
+
+        if not click.confirm(
+            click.style("Check again?", fg="yellow"),
+            default=True,
+        ):
+            raise EsphomeReleaseError("Aborted: unmerged docs PRs for this release")
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):
@@ -665,6 +760,7 @@ def cut_beta_release(version: Version):
 
     base = _prompt_base_version(version)
     _check_open_milestone_prs(version, block=False)
+    _check_linked_docs_prs(version)
     update_local_copies()
 
     # Commits that were cherry-picked
@@ -721,6 +817,7 @@ def cut_release(version: Version):
 
     base = _prompt_base_version(version)
     _check_open_milestone_prs(version, block=True)
+    _check_linked_docs_prs(version)
     update_local_copies()
 
     # Commits that were cherry-picked

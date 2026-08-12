@@ -2,15 +2,20 @@
 """
 Check all open PRs in esphome.io for linked esphome PRs.
 Flags docs PRs where the linked esphome PR has been merged.
+
+Only *confirmed* pairs count: a docs PR body mentioning a code PR is not enough,
+the code PR has to reference the docs PR back. Docs PR bodies routinely name code
+PRs in prose that they do not actually ship alongside, and flagging on those
+produced false positives. One-way references are still reported, separately.
 """
 
 import json
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from esphomerelease.docs_pr_links import extract_esphome_pr_numbers
+from esphomerelease.docs_pr_links import extract_esphome_pr_numbers, is_confirmed_pair
 
 
 @dataclass
@@ -19,6 +24,7 @@ class LinkedPR:
     state: str
     merged_at: str | None
     title: str
+    body: str = ""
 
 
 @dataclass
@@ -26,7 +32,10 @@ class DocsPR:
     number: int
     title: str
     url: str
-    linked_prs: list[LinkedPR]
+    # Code PRs that reference this docs PR back: the genuine pairs.
+    confirmed_prs: list[LinkedPR] = field(default_factory=list)
+    # Code PRs this docs PR names one-way, kept for reviewer context only.
+    unconfirmed_prs: list[LinkedPR] = field(default_factory=list)
 
 
 def run_gh_command(args: list[str]) -> str:
@@ -70,7 +79,7 @@ def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
                 "--repo",
                 "esphome/esphome",
                 "--json",
-                "state,mergedAt,title",
+                "state,mergedAt,title,body",
             ]
         )
         data = json.loads(output)
@@ -79,6 +88,7 @@ def get_esphome_pr_state(pr_number: int) -> LinkedPR | None:
             state=data["state"],
             merged_at=data.get("mergedAt"),
             title=data["title"],
+            body=data.get("body") or "",
         )
     except subprocess.CalledProcessError:
         return None
@@ -90,6 +100,13 @@ def fetch_linked_pr_states(pr_numbers: list[int]) -> dict[int, LinkedPR | None]:
         return {}
     with ThreadPoolExecutor(max_workers=min(16, len(pr_numbers))) as pool:
         return dict(zip(pr_numbers, pool.map(get_esphome_pr_state, pr_numbers)))
+
+
+def _print_linked_pr(linked: LinkedPR) -> None:
+    status = "✅ MERGED" if linked.state == "MERGED" else f"⏳ {linked.state}"
+    merged_info = f" (merged: {linked.merged_at})" if linked.merged_at else ""
+    print(f"     - #{linked.number}: {linked.title}")
+    print(f"       Status: {status}{merged_info}")
 
 
 def main():
@@ -115,25 +132,29 @@ def main():
         if not pr_numbers:
             continue
 
-        linked_prs = []
+        docs_pr = DocsPR(number=pr["number"], title=pr["title"], url=pr["url"])
         has_merged = False
 
         for pr_num in pr_numbers:
             linked_pr = linked_states[pr_num]
-            if linked_pr:
-                linked_prs.append(linked_pr)
+            if not linked_pr:
+                continue
+            if is_confirmed_pair(
+                docs_body=pr.get("body", ""),
+                docs_number=pr["number"],
+                code_body=linked_pr.body,
+                code_number=pr_num,
+            ):
+                docs_pr.confirmed_prs.append(linked_pr)
+                # Only a confirmed pair means "the code landed, the docs did
+                # not". A merged PR this docs PR merely mentions does not.
                 if linked_pr.state == "MERGED":
                     has_merged = True
+            else:
+                docs_pr.unconfirmed_prs.append(linked_pr)
 
         if has_merged:
-            flagged_prs.append(
-                DocsPR(
-                    number=pr["number"],
-                    title=pr["title"],
-                    url=pr["url"],
-                    linked_prs=linked_prs,
-                )
-            )
+            flagged_prs.append(docs_pr)
 
     if not flagged_prs:
         print("✅ No docs PRs found with merged esphome PRs")
@@ -145,17 +166,18 @@ def main():
     for docs_pr in flagged_prs:
         print(f"\n📄 Docs PR #{docs_pr.number}: {docs_pr.title}")
         print(f"   {docs_pr.url}")
-        print("   Linked esphome PRs:")
-        for linked in docs_pr.linked_prs:
-            status = "✅ MERGED" if linked.state == "MERGED" else f"⏳ {linked.state}"
-            merged_info = f" (merged: {linked.merged_at})" if linked.merged_at else ""
-            print(f"     - #{linked.number}: {linked.title}")
-            print(f"       Status: {status}{merged_info}")
+        print("   Linked esphome PRs (confirmed, they link back):")
+        for linked in docs_pr.confirmed_prs:
+            _print_linked_pr(linked)
+        if docs_pr.unconfirmed_prs:
+            print("   Mentioned esphome PRs (unconfirmed, no back-link):")
+            for linked in docs_pr.unconfirmed_prs:
+                _print_linked_pr(linked)
 
     print("\n" + "=" * 80)
     print(f"\nSummary: {len(flagged_prs)} docs PRs need attention")
 
-    return 1 if flagged_prs else 0
+    return 1
 
 
 if __name__ == "__main__":

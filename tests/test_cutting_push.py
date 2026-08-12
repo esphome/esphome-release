@@ -108,6 +108,7 @@ def _stub_cut_helpers(cutting, monkeypatch, recorder):
 
     for name in (
         "_check_open_milestone_prs",
+        "_check_linked_docs_prs",
         "update_local_copies",
         "_docs_insert_changelog",
         "_docs_update_supporters",
