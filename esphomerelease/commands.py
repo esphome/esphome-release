@@ -62,10 +62,62 @@ def cli(step):
     CONFIG["step"] = step
 
 
-@cli.command(help="Cut a release.")
+STABLE_SHORTHANDS = ("s", "stable")
+BETA_SHORTHANDS = ("b", "beta")
+
+VERSION_ARG_HELP = (
+    "VERSION is e.g. 2026.8.0b4, or a shorthand resolved against the latest "
+    "release: 's' for the next stable (the final .0 during a beta period, "
+    "otherwise a patch), 'b' for the next beta."
+)
+
+
+def _next_stable_version(latest: Version) -> Version:
+    """Version of the next stable release after ``latest``.
+
+    During a beta period the next stable closes out that cycle, otherwise it
+    is a patch on top of the current stable.
+    """
+    if latest.beta:
+        return latest.replace(beta=0)
+    return latest.next_patch_version
+
+
+def _next_beta_version(latest: Version) -> Version:
+    """Version of the next beta release after ``latest``.
+
+    During a beta period that is the next beta of the same cycle, otherwise
+    the first beta of next month's cycle.
+    """
+    if latest.beta:
+        return latest.next_beta_version
+    next_year, next_month = cutting._next_cycle_year_month(latest)
+    return Version(major=next_year, minor=next_month, patch=0, beta=1)
+
+
+def _resolve_version(value: str) -> Version:
+    """Parse a VERSION argument, expanding the 's'/'b' shorthands.
+
+    The shorthands are resolved against the latest release (prereleases
+    included), so they name the release that comes next.
+    """
+    shorthand = value.strip().lower()
+    if shorthand not in STABLE_SHORTHANDS + BETA_SHORTHANDS:
+        return Version.parse(value)
+
+    latest = EsphomeProject.latest_release()
+    if shorthand in STABLE_SHORTHANDS:
+        version = _next_stable_version(latest)
+    else:
+        version = _next_beta_version(latest)
+    gprint(f"Latest release is {latest}, resolved '{value}' to {version}")
+    return version
+
+
+@cli.command(help=f"Cut a release. {VERSION_ARG_HELP}")
 @click.argument("version")
 def cut(version):
-    version = Version.parse(version)
+    version = _resolve_version(version)
     if version.beta:
         cutting.cut_beta_release(version)
     else:
@@ -74,7 +126,7 @@ def cut(version):
     _commit_user_cache_if_changed()
 
 
-@cli.command(help="Publish a release.")
+@cli.command(help=f"Publish a release. {VERSION_ARG_HELP}")
 @click.argument("version")
 @click.option("--code", is_flag=True, default=False, help="Only publish code")
 @click.option("--docs", is_flag=True, default=False, help="Only publish docs")
@@ -91,7 +143,7 @@ def publish(version: str, code: bool, docs: bool):
     if docs:
         projects.append(EsphomeDocsProject)
 
-    version = Version.parse(version)
+    version = _resolve_version(version)
     if version.beta:
         cutting.publish_beta_release(version, projects=projects)
     else:
@@ -216,11 +268,7 @@ def _next_beta_milestone_title() -> str:
     beta itself, so its cycle milestone is used; otherwise the next beta
     starts next month's cycle.
     """
-    latest = EsphomeProject.latest_release()
-    if latest.beta:
-        return str(latest.replace(beta=0))
-    next_year, next_month = cutting._next_cycle_year_month(latest)
-    return f"{next_year}.{next_month}.0"
+    return str(_next_beta_version(EsphomeProject.latest_release()).replace(beta=0))
 
 
 @cli.command(help="List the PRs in the milestone that will be in the next beta release.")
