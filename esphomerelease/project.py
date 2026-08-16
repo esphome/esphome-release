@@ -342,7 +342,8 @@ class Project:
                 continue
 
             if _issue_is_cherry_picked(issue):
-                gprint(f"Already cherry picked: {issue.title}", fg="yellow")
+                # Expected for every PR already in an earlier beta of the
+                # cycle, so it is not worth reporting.
                 continue
 
             pick_issues.append(issue)

@@ -308,10 +308,10 @@ def test_cherry_pick_from_milestone_no_milestone(modules, tmp_path):
 
 
 def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
-    modules, tmp_path, monkeypatch
+    modules, tmp_path, monkeypatch, capsys
 ):
     """Plain issues are skipped, unmerged PRs prompt, cherry-picked PRs are
-    reported, and the rest are picked sorted by merge time."""
+    dropped silently, and the rest are picked sorted by merge time."""
     import click
 
     project_mod, _ = modules
@@ -319,7 +319,11 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
 
     unmerged = FakeIssue(2, pr=True, title="Unmerged PR")
     picked = FakeIssue(
-        3, labels=["cherry-picked"], pr=True, merged_at="2026-07-01T00:00:00Z"
+        3,
+        labels=["cherry-picked"],
+        pr=True,
+        merged_at="2026-07-01T00:00:00Z",
+        title="Already picked PR",
     )
     second = FakeIssue(4, pr=True, merged_at="2026-07-02T00:00:00Z")
     first = FakeIssue(5, pr=True, merged_at="2026-07-01T00:00:00Z")
@@ -350,6 +354,10 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
     # Only the actually-picked PRs were fetched from the API.
     assert sorted(repo.pull_request_calls) == [4, 5]
     assert len(prompts) == 2 and "Unmerged PR" in prompts[0]
+    # The already-picked PR produces no output at all.
+    out = capsys.readouterr().out
+    assert picked.title not in out
+    assert "cherry picked" not in out
 
 
 def _milestone(*, closed_issues: int, open_issues: int = 0) -> types.SimpleNamespace:
