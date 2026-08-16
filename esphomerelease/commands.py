@@ -126,11 +126,34 @@ def cut(version):
     _commit_user_cache_if_changed()
 
 
-@cli.command(help=f"Publish a release. {VERSION_ARG_HELP}")
-@click.argument("version")
+def _pending_release_version() -> Version:
+    """The single release that has been cut but not published yet."""
+    pending = EsphomeProject.pending_release_versions()
+    if not pending:
+        raise click.ClickException(
+            "Found no cut-but-unpublished release, please pass the version "
+            "explicitly."
+        )
+    if len(pending) > 1:
+        versions = ", ".join(str(version) for version in pending)
+        raise click.ClickException(
+            f"Found multiple cut-but-unpublished releases ({versions}), please "
+            "pass the version explicitly."
+        )
+    gprint(f"Publishing the release that was cut: {pending[0]}")
+    return pending[0]
+
+
+@cli.command(
+    help=(
+        "Publish a release. "
+        f"{VERSION_ARG_HELP} Omit it to publish the release that was cut last."
+    )
+)
+@click.argument("version", required=False)
 @click.option("--code", is_flag=True, default=False, help="Only publish code")
 @click.option("--docs", is_flag=True, default=False, help="Only publish docs")
-def publish(version: str, code: bool, docs: bool):
+def publish(version: Optional[str], code: bool, docs: bool):
     # If neither flag is specified, publish both
     if not code and not docs:
         code = True
@@ -143,7 +166,7 @@ def publish(version: str, code: bool, docs: bool):
     if docs:
         projects.append(EsphomeDocsProject)
 
-    version = _resolve_version(version)
+    version = _resolve_version(version) if version else _pending_release_version()
     if version.beta:
         cutting.publish_beta_release(version, projects=projects)
     else:

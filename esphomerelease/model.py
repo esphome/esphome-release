@@ -84,31 +84,19 @@ class Version:
             raise ValueError(f"No previous patch version for {self}")
         return self.replace(patch=self.patch - 1)
 
-    def __lt__(self, other: "Version") -> bool:
-        # 1.14.5 < 2.0.0
-        if self.major != other.major:
-            return self.major < other.major
-        # 1.14.5 < 1.15.0
-        if self.minor != other.minor:
-            return self.minor < other.minor
-        # 1.14.5 < 1.14.6
-        if self.patch != other.patch:
-            return self.patch < other.patch
-        # 1.15.0-dev < 1.15.0
-        if self.dev is not other.beta:
-            return self.dev
-        # 1.15.0b1 < 1.15.0
-        if self.beta != other.beta:
-            # 1.15.0b1 < 1.15.0
-            if 0 in (self.beta, other.beta):
-                return other.beta == 0
-            # 1.15.0b1 < 1.15.0b2
-            return self.beta < other.beta
-        if self.beta < other.beta:
-            return True
+    @property
+    def _sort_key(self) -> tuple:
+        # Within one major.minor.patch: 1.15.0-dev < 1.15.0b1 < 1.15.0b2 < 1.15.0
+        if self.dev:
+            stage, stage_number = 0, 0
+        elif self.beta:
+            stage, stage_number = 1, self.beta
+        else:
+            stage, stage_number = 2, 0
+        return (self.major, self.minor, self.patch, stage, stage_number)
 
-        assert self == other
-        return False
+    def __lt__(self, other: "Version") -> bool:
+        return self._sort_key < other._sort_key
 
     def __le__(self, other) -> bool:
         return self < other or self == other

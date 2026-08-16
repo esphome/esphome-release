@@ -403,6 +403,42 @@ class Project:
                 pass
         return max(found_versions)
 
+    # The release PR of a cut is always among the newest PRs against the beta
+    # and stable branches, which see little other traffic — one short page per
+    # branch is enough.
+    RECENT_RELEASE_PRS_TO_CHECK = 10
+
+    def pending_release_versions(self) -> List[Version]:
+        """Versions that have been cut but not published yet, newest first.
+
+        A cut opens a ``bump-<version>`` PR against the beta or stable branch,
+        so any such PR newer than the latest published release is a release
+        still waiting to be published. Merged release PRs count too: publishing
+        merges the PR before creating the release, and it may also have been
+        merged by hand.
+        """
+        latest = self.latest_release()
+        found: set[Version] = set()
+        for branch in (Branch.BETA, Branch.STABLE):
+            for pr in self.repo.pull_requests(
+                base=self.lookup_branch(branch),
+                state="all",
+                number=self.RECENT_RELEASE_PRS_TO_CHECK,
+            ):
+                if pr.state == "closed" and pr.merged_at is None:
+                    # Cut abandoned or superseded.
+                    continue
+                match = re.fullmatch(r"bump-(.+)", pr.head.ref)
+                if match is None:
+                    continue
+                try:
+                    version = Version.parse(match[1])
+                except ValueError:
+                    continue
+                if version > latest:
+                    found.add(version)
+        return sorted(found, reverse=True)
+
     def create_pr(
         self, *, title: str, target_branch: BranchType, body: Optional[str] = None
     ) -> PullRequest:
