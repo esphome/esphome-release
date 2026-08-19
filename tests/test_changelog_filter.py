@@ -77,3 +77,69 @@ def test_reverted_takes_precedence_over_cherry_pick():
         )
         is None
     )
+
+
+# 2026.8.0b6 regression: cherry-picked PRs are milestoned with the cycle's
+# final version, not a per-beta milestone, so the upper bound of the range
+# check must be normalised to the final version when the head is a beta.
+BETA_BASE = Version.parse("2026.8.0b5")
+BETA_HEAD = Version.parse("2026.8.0b6")
+
+
+def test_cherry_pick_milestoned_at_cycle_final_is_included_for_beta_head():
+    # This is the 2026.8.0b6 regression: the milestone is the cycle's final
+    # version (2026.8.0), which sorts above a beta head unless the upper
+    # bound is normalised to the final version.
+    result = resolve_changelog_labels(
+        ["cherry-picked"], "2026.8.0", BETA_BASE, BETA_HEAD
+    )
+    assert result == ["cherry-picked"]
+
+
+def test_cherry_pick_milestoned_for_later_cycle_is_excluded_for_beta_head():
+    assert (
+        resolve_changelog_labels(
+            ["cherry-picked"], "2026.9.0", BETA_BASE, BETA_HEAD
+        )
+        is None
+    )
+
+
+def test_cherry_pick_milestoned_at_or_before_base_is_excluded_for_beta_head():
+    # Milestoned for an earlier cycle entirely.
+    assert (
+        resolve_changelog_labels(
+            ["cherry-picked"], "2026.7.0", BETA_BASE, BETA_HEAD
+        )
+        is None
+    )
+    # Milestoned exactly at the (previous-beta) base is excluded too -
+    # already shipped in the base release.
+    assert (
+        resolve_changelog_labels(
+            ["cherry-picked"], "2026.8.0b5", BETA_BASE, BETA_HEAD
+        )
+        is None
+    )
+
+
+def test_cherry_pick_milestoned_at_cycle_final_is_included_for_dev_head():
+    # dev heads (e.g. from the manual `release-notes` command) go through the
+    # same normalisation as beta heads.
+    dev_base = Version.parse("2026.7.0")
+    dev_head = dev_base.next_dev_version  # 2026.8.0-dev
+    result = resolve_changelog_labels(
+        ["cherry-picked"], "2026.8.0", dev_base, dev_head
+    )
+    assert result == ["cherry-picked"]
+
+
+def test_cherry_pick_inside_range_for_non_beta_head_is_unchanged():
+    # Non-beta (patch) heads keep their existing behaviour: the upper bound
+    # is the head version itself, unmodified.
+    patch_base = Version.parse("2026.8.0")
+    patch_head = Version.parse("2026.8.1")
+    result = resolve_changelog_labels(
+        ["cherry-picked"], "2026.8.1", patch_base, patch_head
+    )
+    assert result == ["cherry-picked"]

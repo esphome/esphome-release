@@ -32,9 +32,15 @@ def resolve_changelog_labels(
 
     - ``reverted`` PRs are always excluded.
     - ``cherry-picked`` PRs are included only if their milestone version falls in
-      the half-open range ``(base_version, head_version]``. A cherry-pick
-      milestoned at or before the base, or after the head, was not part of this
-      release and is excluded.
+      the half-open range ``(base_version, upper_bound]``, where ``upper_bound``
+      is ``head_version`` for a final release, or that release cycle's final
+      version (``head_version`` with ``beta`` and ``dev`` cleared) when
+      ``head_version`` is itself a beta or dev prerelease. This matters because
+      cherry-picked PRs are milestoned with the cycle's final version (e.g.
+      ``2026.8.0``), not a per-beta milestone - without normalising the upper
+      bound, every cherry-pick would sort above a beta head and be excluded. A
+      cherry-pick milestoned at or before the base, or after the upper bound,
+      was not part of this release and is excluded.
     - If the milestone title can't be parsed as a version, the PR is still
       included but the ``cherry-picked`` label is dropped — we can't place it in
       a beta-changes section, so we treat it as a normal change.
@@ -57,7 +63,10 @@ def resolve_changelog_labels(
         except ValueError:
             labels.remove("cherry-picked")
             return labels
-        if not (base_version < pick_version <= head_version):
+        upper_bound = head_version
+        if head_version.beta or head_version.dev:
+            upper_bound = head_version.replace(beta=0, dev=False)
+        if not (base_version < pick_version <= upper_bound):
             # Picked into a different release — not part of this one.
             return None
 
