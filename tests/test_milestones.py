@@ -177,8 +177,8 @@ def test_open_next_cycle_milestone(cutting, monkeypatch):
 
     calls = _record_ensure(cutting, monkeypatch)
     cutting._open_next_cycle_milestone(Version.parse("2026.7.0b1"))
-    # Feature freeze for August 2026: Monday Aug 10 (second Wednesday is Aug 12).
-    due = "2026-08-10T12:00:00Z"
+    # Feature freeze for August 2026: Monday Aug 3 (first Wednesday is Aug 5).
+    due = "2026-08-03T12:00:00Z"
     assert calls == [
         ("esphome", "2026.8.0", due),
         ("docs", "2026.8.0", due),

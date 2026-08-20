@@ -284,7 +284,7 @@ def _open_next_cycle_milestone(version: Version):
     Runs as soon as the first beta is cut — from that moment ``dev`` is the
     next cycle, so PRs can immediately be marked for it (prioritized for
     review/merge). Its due date is set to the new-component/feature merge
-    deadline (the Monday before the second Wednesday of that month).
+    deadline (the Monday before the first Wednesday of that month).
 
     Idempotent: a milestone that already exists (e.g. created manually) is
     reused, with its due date corrected if it doesn't match.
