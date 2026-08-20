@@ -389,7 +389,7 @@ def _stub_cut(cutting, monkeypatch, order: list) -> None:
         "_close_cycle_milestone",
         "_mark_cherry_picked",
         "_strategy_cherry_pick",
-        "_push_current_merge_branches",
+        "propagate_docs_current_branch",
     ):
         monkeypatch.setattr(cutting, name, lambda *a, **k: [])
 

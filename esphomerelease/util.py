@@ -11,7 +11,7 @@ import click
 import requests
 
 from .config import CONFIG
-from .model import Version
+from .model import Branch, Version
 from .exceptions import EsphomeReleaseError
 
 
@@ -123,9 +123,9 @@ def process_asynchronously(
     return [result[i] for i, job in enumerate(jobs)]
 
 
-def update_local_copies():
-    """Update local repos to be up to date with remotes."""
-    from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
+def _discard_local_changes():
+    """Reset any uncommitted work in the code and docs repos, after asking."""
+    from .project import EsphomeDocsProject, EsphomeProject
 
     for project in (EsphomeProject, EsphomeDocsProject):
         if not project.has_local_changes:
@@ -144,18 +144,47 @@ def update_local_copies():
         project.run_git("reset", "--hard", "HEAD")
         project.run_git("clean", "-fd")
 
+
+def update_local_copies():
+    """Update the local repos to be up to date with their remotes.
+
+    Read-only as far as the remotes are concerned: it only discards local
+    work and pulls. Branch-to-branch merges belong in
+    :func:`propagate_docs_current_branch`, which pushes what it creates.
+    """
+    from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
+
+    _discard_local_changes()
+
     gprint("Updating local repo copies")
     for branch in ["release", "dev", "beta"]:
         EsphomeProject.checkout_pull(branch)
     for branch in ["current", "next", "beta"]:
         EsphomeDocsProject.checkout_pull(branch)
 
-    with EsphomeDocsProject.workon("next"):
-        EsphomeDocsProject.merge("current")
-    with EsphomeDocsProject.workon("beta"):
-        EsphomeDocsProject.merge("current")
-
     EsphomeHassioProject.checkout_pull("main")
+
+
+def propagate_docs_current_branch():
+    """Merge the docs ``current`` branch into ``next`` and ``beta``, and push.
+
+    Docs fixes for the released version land on ``current``, and every cut
+    expects the other docs branches to already carry them. The merge is pushed
+    immediately: a merge left sitting locally makes the next ``git pull`` on
+    that branch fail to fast-forward, which blocks the following cut.
+
+    Pushes only when the branch is actually ahead of the remote, so a run with
+    nothing to propagate is a no-op - and a branch left ahead by an earlier
+    interrupted run gets pushed here.
+    """
+    from .project import EsphomeDocsProject
+
+    gprint("Propagating docs current branch")
+    for branch in (Branch.DEV, Branch.BETA):
+        with EsphomeDocsProject.workon(branch):
+            EsphomeDocsProject.merge(Branch.STABLE)
+            if EsphomeDocsProject.has_unpushed_commits:
+                EsphomeDocsProject.push()
 
 
 def checkout_dev():

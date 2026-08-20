@@ -638,6 +638,25 @@ class Project:
             self.merge(base)
 
     @property
+    def has_unpushed_commits(self) -> bool:
+        """Whether the current branch is ahead of its remote-tracking branch.
+
+        Used to keep merges from being left behind locally; the caller has
+        just pulled, so ``origin/<branch>`` is up to date.
+        """
+        count = (
+            self.run_git(
+                "rev-list",
+                "--count",
+                f"origin/{self.branch}..{self.branch}",
+                silent=True,
+            )
+            .decode()
+            .strip()
+        )
+        return count != "0"
+
+    @property
     def has_local_changes(self) -> bool:
         try:
             self.run_git(
