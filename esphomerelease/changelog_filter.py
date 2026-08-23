@@ -31,6 +31,13 @@ def resolve_changelog_labels(
     Rules (faithful to the historical inline logic in ``generate``):
 
     - ``reverted`` PRs are always excluded.
+    - For a patch release (``head_version`` has a non-zero patch and is neither a
+      beta nor a dev prerelease) only PRs milestoned exactly at ``head_version``
+      are included. A patch ships precisely what its milestone says it ships, so
+      anything else in the released range - most visibly the docs PRs that land
+      straight on the docs ``current`` branch between releases and so sit in the
+      range without ever having been part of the patch - is excluded. An empty
+      changelog is a valid outcome.
     - ``cherry-picked`` PRs are included only if their milestone version falls in
       the half-open range ``(base_version, upper_bound]``, where ``upper_bound``
       is ``head_version`` for a final release, or that release cycle's final
@@ -54,6 +61,18 @@ def resolve_changelog_labels(
 
     if "reverted" in labels:
         return None
+
+    if head_version.patch != 0 and not head_version.beta and not head_version.dev:
+        # A patch release contains exactly the PRs on its own milestone.
+        if milestone_title is None:
+            return None
+        try:
+            pr_version = Version.parse(milestone_title)
+        except ValueError:
+            return None
+        if pr_version != head_version:
+            return None
+        return labels
 
     if "cherry-picked" in labels:
         if milestone_title is None:

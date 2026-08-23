@@ -581,7 +581,8 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     # Patch: its release section lands on the blog post, inside a fresh
     # markdownlint-disabled region; the changelog page is left alone.
     page_before = page.read_text()
-    patch_fix = FakePR(30, "Fix crash")
+    # Patch PRs are cherry-picked from the patch milestone, so they carry it.
+    patch_fix = FakePR(30, "Fix crash", milestone="2026.7.1")
     _, commits = _run_docs_insert_changelog(
         cutting, monkeypatch, Version.parse("2026.7.1"), "2026.7.0", [patch_fix]
     )

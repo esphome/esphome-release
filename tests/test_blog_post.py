@@ -283,7 +283,8 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
     post.parent.mkdir(parents=True)
     post.write_text(EXPECTED_POST)
 
-    fix = FakePR(30, "Fix crash")
+    # Patch PRs are cherry-picked from the patch milestone, so they carry it.
+    fix = FakePR(30, "Fix crash", milestone="2026.7.1")
     url, commits, commands, _, opened = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.1", "2026.7.0", prs=[fix]
     )

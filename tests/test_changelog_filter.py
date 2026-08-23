@@ -7,8 +7,10 @@ run without a configured working copy or any GitHub objects.
 from esphomerelease.changelog_filter import resolve_changelog_labels
 from esphomerelease.model import Version
 
+# A non-patch head, so these cases exercise the generic rules rather than the
+# patch-only milestone filter (covered separately at the bottom of the file).
 BASE = Version.parse("1.15.0")
-HEAD = Version.parse("1.15.3")
+HEAD = Version.parse("1.16.0")
 
 
 def test_plain_pr_is_included_unchanged():
@@ -25,7 +27,7 @@ def test_reverted_pr_is_excluded():
 
 
 def test_cherry_pick_inside_range_is_included():
-    # 1.15.0 < 1.15.2 <= 1.15.3
+    # 1.15.0 < 1.15.2 <= 1.16.0
     result = resolve_changelog_labels(
         ["cherry-picked"], "1.15.2", BASE, HEAD
     )
@@ -34,7 +36,7 @@ def test_cherry_pick_inside_range_is_included():
 
 def test_cherry_pick_at_head_is_included():
     # Upper bound is inclusive.
-    result = resolve_changelog_labels(["cherry-picked"], "1.15.3", BASE, HEAD)
+    result = resolve_changelog_labels(["cherry-picked"], "1.16.0", BASE, HEAD)
     assert result == ["cherry-picked"]
 
 
@@ -48,7 +50,7 @@ def test_cherry_pick_before_base_is_excluded():
 
 
 def test_cherry_pick_after_head_is_excluded():
-    assert resolve_changelog_labels(["cherry-picked"], "1.15.4", BASE, HEAD) is None
+    assert resolve_changelog_labels(["cherry-picked"], "1.16.1", BASE, HEAD) is None
 
 
 def test_cherry_pick_unparseable_milestone_keeps_pr_drops_label():
@@ -143,3 +145,75 @@ def test_cherry_pick_inside_range_for_non_beta_head_is_unchanged():
         ["cherry-picked"], "2026.8.1", patch_base, patch_head
     )
     assert result == ["cherry-picked"]
+
+
+# A patch release ships exactly the PRs on its own milestone. Without this the
+# docs release PR and GitHub release listed every PR merged onto the docs
+# ``current`` branch since the previous release, because the patch bump branch
+# is cut from ``current`` and those PRs sit in the released commit range.
+PATCH_BASE = Version.parse("2026.8.0")
+PATCH_HEAD = Version.parse("2026.8.1")
+
+
+def test_patch_includes_pr_on_the_patch_milestone():
+    result = resolve_changelog_labels(["bugfix"], "2026.8.1", PATCH_BASE, PATCH_HEAD)
+    assert result == ["bugfix"]
+
+
+def test_patch_excludes_pr_without_a_milestone():
+    # Docs fixes merged straight onto ``current`` between releases.
+    assert resolve_changelog_labels(["bugfix"], None, PATCH_BASE, PATCH_HEAD) is None
+
+
+def test_patch_excludes_pr_with_unparseable_milestone():
+    assert (
+        resolve_changelog_labels(["bugfix"], "not-a-version", PATCH_BASE, PATCH_HEAD)
+        is None
+    )
+
+
+def test_patch_excludes_pr_on_the_cycle_milestone():
+    # Milestoned for the .0 release - already shipped in the base.
+    assert (
+        resolve_changelog_labels(["bugfix"], "2026.8.0", PATCH_BASE, PATCH_HEAD) is None
+    )
+
+
+def test_patch_excludes_pr_on_a_later_patch_milestone():
+    assert (
+        resolve_changelog_labels(["bugfix"], "2026.8.2", PATCH_BASE, PATCH_HEAD) is None
+    )
+
+
+def test_patch_keeps_cherry_picked_label_on_milestone_pr():
+    result = resolve_changelog_labels(
+        ["cherry-picked"], "2026.8.1", PATCH_BASE, PATCH_HEAD
+    )
+    assert result == ["cherry-picked"]
+
+
+def test_patch_reverted_takes_precedence():
+    assert (
+        resolve_changelog_labels(["reverted"], "2026.8.1", PATCH_BASE, PATCH_HEAD)
+        is None
+    )
+
+
+def test_patch_input_labels_not_mutated():
+    labels = ["cherry-picked", "bugfix"]
+    resolve_changelog_labels(labels, "2026.8.1", PATCH_BASE, PATCH_HEAD)
+    assert labels == ["cherry-picked", "bugfix"]
+
+
+def test_patch_beta_head_is_not_milestone_filtered():
+    # A beta of a patch line still goes through the generic rules.
+    assert resolve_changelog_labels(
+        ["bugfix"], None, PATCH_BASE, Version.parse("2026.8.1b1")
+    ) == ["bugfix"]
+
+
+def test_patch_dev_head_is_not_milestone_filtered():
+    dev_head = Version.parse("2026.8.1").replace(dev=True)
+    assert resolve_changelog_labels(["bugfix"], None, PATCH_BASE, dev_head) == [
+        "bugfix"
+    ]
