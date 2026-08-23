@@ -487,7 +487,7 @@ def _render_full_changes_block(changes: list[_DocsChange]) -> str:
     Mirrors the layout of :func:`changelog.generate` with sections, plus the
     marker comments later cuts use to merge new lines in: the Beta Changes
     block between the label sections and All changes, the end of the All
-    changes list, and the end of the (headingless) dependency list.
+    changes list, and the end of the dependency list.
     """
     out: list[str] = [
         "{/* markdownlint-disable MD013 */}",
@@ -509,21 +509,13 @@ def _render_full_changes_block(changes: list[_DocsChange]) -> str:
         "",
         "### All changes",
         "",
-        "<details>",
-        "<summary></summary>",
-        "",
         *[c.msg for c in changes if not c.is_dependency],
         ALL_CHANGES_END,
         "",
-        "</details>",
-        "",
-        "<details>",
-        "<summary></summary>",
+        "### Dependency Changes",
         "",
         *[c.msg for c in changes if c.is_dependency],
         DEPENDENCY_CHANGES_END,
-        "",
-        "</details>",
     ]
     return "\n".join(out) + "\n"
 
@@ -533,36 +525,43 @@ def _append_full_changes_block(content: str, changes: list[_DocsChange]) -> str:
     return content.rstrip("\n") + "\n\n" + _render_full_changes_block(changes)
 
 
+BLOG_FULL_CHANGES_HEADING = "## Full List of Changes"
+MD013_DISABLE = "{/* markdownlint-disable MD013 */}"
+MD013_ENABLE = "{/* markdownlint-enable MD013 */}"
+
+
 def _insert_patch_section(
     content: str, *, version: Version, changes: list[_DocsChange]
 ) -> str:
-    """Insert a patch release section right before the full-changes list.
+    """Insert a patch release section into the cycle's blog post.
 
-    Idempotent: a section for ``version`` that is already on the page is
-    left alone.
+    Patch sections sit in a markdownlint-disabled region right before the
+    Full List of Changes heading: the first patch of a cycle creates the
+    region, later patches append inside it (before its closing marker, i.e.
+    after the earlier patch sections). Idempotent: a section for ``version``
+    that is already on the post is left alone.
     """
     if f"## Release {version} " in content:
         return content
-    if FULL_CHANGES_HEADING not in content:
-        raise EsphomeReleaseError(
-            f"Cannot find '{FULL_CHANGES_HEADING}' in the changelog page"
-        )
     now = datetime.datetime.now()
     section = "\n".join(
         [
             f"## Release {version} - {now:%B} {now.day}",
             "",
-            "<details>",
-            "<summary></summary>",
-            "",
             *[c.msg for c in changes],
-            "",
-            "</details>",
-            "",
-            "",
         ]
     )
-    return content.replace(FULL_CHANGES_HEADING, section + FULL_CHANGES_HEADING, 1)
+    if MD013_ENABLE in content:
+        return content.replace(MD013_ENABLE, f"{section}\n\n{MD013_ENABLE}", 1)
+    if BLOG_FULL_CHANGES_HEADING not in content:
+        raise EsphomeReleaseError(
+            f"Cannot find '{BLOG_FULL_CHANGES_HEADING}' in the blog post"
+        )
+    return content.replace(
+        BLOG_FULL_CHANGES_HEADING,
+        f"{MD013_DISABLE}\n\n{section}\n\n{MD013_ENABLE}\n\n{BLOG_FULL_CHANGES_HEADING}",
+        1,
+    )
 
 
 def _merge_changes(content: str, changes: list[_DocsChange], *, beta: bool) -> str:
@@ -655,10 +654,167 @@ def _new_component_table_lines(base: Version) -> list[str]:
     return rows
 
 
-def _render_changelog_page(changelog_version: Version, featured: list[str]) -> str:
-    """The skeleton of a fresh changelog page: header, import, featured table."""
+BLOG_DIR = Path("src/content/docs/blog")
+
+
+def _blog_slug(version: Version) -> str:
+    """File stem of the cycle's release notes blog post (no patch component)."""
+    return f"esphome-{version.major}-{version.minor}"
+
+
+def _blog_post_url(path: Path) -> str:
+    """Site-absolute URL of a blog post, derived from its path in the docs repo.
+
+    Using the file's actual location (rather than recomputing the release
+    date) means the link can never point somewhere the post is not, even if
+    the post's date was adjusted by hand.
+    """
+    rel = path.relative_to(EsphomeDocsProject.path / BLOG_DIR)
+    return "/blog/" + "/".join([*rel.parts[:-1], rel.stem]) + "/"
+
+
+def _find_blog_post(version: Version) -> Path | None:
+    """Locate the cycle's release notes blog post, whatever date it carries.
+
+    Should the slug somehow exist under several dates, the newest wins,
+    mirroring the docs repo's ``generate_release_notes.py``.
+    """
+    matches = sorted(
+        (EsphomeDocsProject.path / BLOG_DIR).glob(f"*/*/*/{_blog_slug(version)}.mdx")
+    )
+    return matches[-1] if matches else None
+
+
+def _prompt_blog_date(version: Version) -> datetime.date:
+    """The blog post's date: the release Wednesday, confirmed by the user."""
+    default = release_date(version.major, version.minor)
+    while True:
+        raw = click.prompt(
+            "Blog post date (the release Wednesday)", default=default.isoformat()
+        )
+        try:
+            return datetime.date.fromisoformat(raw)
+        except ValueError:
+            gprint(f"Invalid date {raw!r}, expected YYYY-MM-DD")
+
+
+BLOG_TEMPLATE = Path("script/blog_post_template.mdx")
+
+# The line rows are inserted after when drafting the featured components table.
+_IMG_TABLE_OPEN = "<ImgTable items={[\n"
+
+
+def _render_blog_post(
+    version: Version, *, date: datetime.date, featured: list[str]
+) -> str:
+    """Fill the docs repo's blog post template for this cycle.
+
+    The template (``script/blog_post_template.mdx`` in the docs checkout)
+    carries the frontmatter and marker-delimited narrative sections; here only
+    the version, date and path placeholders are filled, plus the featured
+    components table drafted from the index diff. ``{TAGLINE}`` and
+    ``{DESCRIPTION}`` are left as-is for manual fill during the beta, the
+    same convention as the docs repo's ``generate_release_notes.py``.
+    """
+    template_path = EsphomeDocsProject.path / BLOG_TEMPLATE
+    if not template_path.exists():
+        raise EsphomeReleaseError(
+            f"Blog post template {BLOG_TEMPLATE} not found in the docs checkout"
+        )
+    stable = version.replace(patch=0, beta=0, dev=False)
+    content = template_path.read_text()
+    tokens = {
+        "{VERSION}": str(stable),
+        "{DATE}": date.isoformat(),
+        "{BLOG_PATH}": f"blog/{date:%Y/%m/%d}/{_blog_slug(version)}",
+    }
+    for token, value in tokens.items():
+        content = content.replace(token, value)
+    if featured:
+        if _IMG_TABLE_OPEN in content:
+            rows = "".join(f"  {row}\n" for row in featured)
+            content = content.replace(_IMG_TABLE_OPEN, _IMG_TABLE_OPEN + rows, 1)
+        else:
+            gprint(
+                "Featured components table not found in the blog post template, "
+                "please add the drafted rows manually"
+            )
+    return content
+
+
+def _docs_update_blog_post(*, version: Version, base: Version) -> str | None:
+    """Create or refresh the cycle's release notes blog post; returns its URL.
+
+    The first beta creates the skeleton (the date defaults to the release
+    Wednesday and is confirmed by the user); later cuts find the post already
+    in the tree via the merge/branch they were cut from. Betas carry the beta
+    notice, the stable release removes it, and patch releases append their
+    "Release x.y.z" section to the post (see :func:`_insert_patch_section`).
+    Afterwards ``script/bump-version.py`` is re-run so the docs repo rewrites
+    ``data/version.json`` with the post's URL as ``blog_url`` (the version
+    bump itself ran before this post existed).
+
+    Returns ``None`` without touching anything when no post exists and this
+    isn't a first-beta cut (cycles from before release notes moved to the
+    blog), leaving ``blog_url`` pointing at the newest published post.
+    """
+    branch_name = _bump_branch_name(version)
+    with EsphomeDocsProject.workon(branch_name):
+        path = _find_blog_post(version)
+        created = False
+        if path is None:
+            if version.beta != 1:
+                gprint(f"No release notes blog post for {version}, skipping")
+                return None
+            date = _prompt_blog_date(version)
+            path = (
+                EsphomeDocsProject.path
+                / BLOG_DIR
+                / f"{date:%Y/%m/%d}"
+                / f"{_blog_slug(version)}.mdx"
+            )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            featured = _new_component_table_lines(base)
+            path.write_text(_render_blog_post(version, date=date, featured=featured))
+            created = True
+            gprint(f"Created release notes blog post {path.name}")
+            gprint(
+                "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually"
+            )
+
+        content = path.read_text()
+        review = created
+        if version.patch > 0 and not version.beta:
+            changes = _docs_changes(version=version, base=base)
+            patched = _insert_patch_section(content, version=version, changes=changes)
+            review = review or patched != content
+            content = patched
+        if version.beta:
+            content = _with_beta_notice(content)
+        else:
+            content = _without_beta_notice(content)
+        path.write_text(content)
+
+        # The docs repo derives blog_url in data/version.json from the newest
+        # post in the tree; re-run the bump so it sees the post just written.
+        EsphomeDocsProject.run_command("script/bump-version.py", str(version))
+
+        if review:
+            open_vscode(str(path))
+            confirm("Does the release notes blog post look correct?")
+        EsphomeDocsProject.commit(
+            f"Update release notes blog post for {version}", ignore_empty=True
+        )
+        return _blog_post_url(path)
+
+
+def _render_changelog_page(changelog_version: Version, blog_url: str) -> str:
+    """The skeleton of a fresh changelog page: header and a link to the blog.
+
+    The narrative release notes live in the blog post; this page only carries
+    the generated full list of changes appended by the cut.
+    """
     month = f"{datetime.date(changelog_version.major, changelog_version.minor, 1):%B}"
-    rows = "".join(f"  {row}\n" for row in featured)
     return (
         "---\n"
         f'description: "Changelog for ESPHome {changelog_version}."\n'
@@ -667,12 +823,8 @@ def _render_changelog_page(changelog_version: Version, featured: list[str]) -> s
         f'slug: "changelog/{changelog_version}"\n'
         "---\n"
         "\n"
-        'import ImgTable from "@components/ImgTable.astro";\n'
-        "\n"
-        "{/* MANUAL: Add featured components here */}\n"
-        "<ImgTable items={[\n"
-        f"{rows}"
-        "]} />\n"
+        f"Read the [ESPHome {changelog_version} release notes]({blog_url}) on the blog for the release\n"
+        "overview, feature highlights, upgrade checklist, and breaking changes.\n"
     )
 
 
@@ -689,7 +841,7 @@ def _changelog_page_path(version: Version) -> Path:
     )
 
 
-def _ensure_changelog_page(*, version: Version, base: Version) -> bool:
+def _ensure_changelog_page(*, version: Version, blog_url: str | None) -> bool:
     """Create the cycle's changelog page skeleton if it doesn't exist yet.
 
     Only the first beta actually creates the page; later betas, the stable
@@ -699,25 +851,31 @@ def _ensure_changelog_page(*, version: Version, base: Version) -> bool:
     path = _changelog_page_path(version)
     if path.exists():
         return False
+    if blog_url is None:
+        raise EsphomeReleaseError(
+            "Cannot create the changelog page without a release notes blog post"
+        )
     changelog_version = version.replace(patch=0, beta=0, dev=False)
-    featured = _new_component_table_lines(base)
-    path.write_text(_render_changelog_page(changelog_version, featured))
+    path.write_text(_render_changelog_page(changelog_version, blog_url))
     return True
 
 
 def _docs_insert_changelog(*, version: Version, base: Version):
+    blog_url = _docs_update_blog_post(version=version, base=base)
+    if version.patch > 0 and not version.beta:
+        # A patch's release notes go onto the cycle's blog post (handled
+        # above); the changelog page only carries the .0 release's full list.
+        return
     branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
         changelog_path = _changelog_page_path(version)
-        if _ensure_changelog_page(version=version, base=base):
+        if _ensure_changelog_page(version=version, blog_url=blog_url):
             gprint(f"Created changelog page {changelog_path.name}")
 
         content = changelog_path.read_text()
         changes = _docs_changes(version=version, base=base)
 
-        if version.patch > 0 and not version.beta:
-            content = _insert_patch_section(content, version=version, changes=changes)
-        elif FULL_CHANGES_HEADING not in content:
+        if FULL_CHANGES_HEADING not in content:
             content = _append_full_changes_block(content, changes)
         else:
             content = _merge_changes(content, changes, beta=version.beta > 0)

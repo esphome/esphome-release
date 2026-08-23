@@ -6,17 +6,10 @@ components index since the base release) and inserts the beta notice block;
 cutting the stable release removes the notice again. Everything is idempotent
 because repeated betas and patch releases hit the same ``<cycle>.0.mdx`` file.
 
-``cutting`` imports ``.project``, which instantiates every ``Project`` at
-import time and asserts each configured path is a directory. The ``cutting``
-fixture writes a temp ``config.json`` whose paths point at real directories so
-the module is importable, mirroring the import-safe reload pattern used
-elsewhere in this repo.
+The ``cutting`` and ``docs_git`` fixtures live in ``conftest.py``.
 """
 
 import contextlib
-import importlib
-import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -64,93 +57,6 @@ import ImgTable from "@components/ImgTable.astro";
 {{/* MANUAL: Add featured components here */}}
 <ImgTable items={{[]}} />
 """
-
-
-@pytest.fixture
-def cutting(tmp_path, monkeypatch):
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir()
-    config = {
-        "github_token": "x",
-        "step": False,
-        "esphome_path": str(repo_dir),
-        "esphome_io_path": str(repo_dir),
-        "esphome_hassio_path": str(repo_dir),
-        "esphome_issues_path": str(repo_dir),
-        "esphome_feature_requests_path": str(repo_dir),
-    }
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "config.json").write_text(json.dumps(config))
-
-    import esphomerelease.config as config_mod
-
-    importlib.reload(config_mod)
-    import esphomerelease.project as project_mod
-
-    importlib.reload(project_mod)
-    import esphomerelease.cutting as cutting_mod
-
-    importlib.reload(cutting_mod)
-    return cutting_mod
-
-
-INDEX_BASE = """\
-<ImgTable items={[
-  ["ESP32", "/components/esp32/", "esp32.svg"],
-  ["RP2040", "/components/rp2040/", "rp2040.svg"],
-]} />
-
-## Other
-
-<ImgTable items={[
-  ["Zigbee", "/components/zigbee/", "zigbee.svg"],
-]} />
-"""
-
-# Against INDEX_BASE this adds one component in two tables (dedupe by URL),
-# one single-table component, moves the ESP32 row and renames RP2040 to RP2.
-INDEX_HEAD = """\
-<ImgTable items={[
-  ["New Thing", "/components/new_thing/", "new_thing.svg"],
-  ["RP2", "/components/rp2/", "rp2040.svg"],
-  ["ESP32", "/components/esp32/", "esp32.svg"],
-]} />
-
-## Other
-
-<ImgTable items={[
-  ["New Thing", "/components/new_thing/", "new_thing.svg"],
-  ["UFM-01 Flow Meter", "/components/ufm01/", "ufm01.png", "Flow & Temperature"],
-  ["Zigbee", "/components/zigbee/", "zigbee.svg"],
-]} />
-"""
-
-
-def _git(cwd, *args):
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
-
-
-@pytest.fixture
-def docs_git(cutting):
-    """Turn the docs project path into a git repo with a tagged base index."""
-    repo = Path(cutting.EsphomeDocsProject.path)
-    index = repo / Path(cutting.COMPONENTS_INDEX)
-    index.parent.mkdir(parents=True, exist_ok=True)
-    (repo / "src" / "content" / "docs" / "changelog").mkdir(
-        parents=True, exist_ok=True
-    )
-
-    _git(repo, "init", "-b", "main")
-    _git(repo, "config", "user.email", "test@example.com")
-    _git(repo, "config", "user.name", "Test")
-    index.write_text(INDEX_BASE)
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-m", "base")
-    _git(repo, "tag", "2026.6.0")
-    index.write_text(INDEX_HEAD)
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-m", "new components")
-    return repo
 
 
 def test_with_beta_notice_inserts_after_frontmatter(cutting):
@@ -243,12 +149,17 @@ def _line(pr: FakePR) -> str:
     return line
 
 
+BLOG_DATE = "2026-07-15"
+
+
 def _run_docs_insert_changelog(cutting, monkeypatch, version, base, prs):
     """Drive the real ``_docs_insert_changelog`` with the side effects stubbed.
 
     Only the interactive/remote edges are stubbed (git checkout, GitHub PR
-    fetching, VS Code, confirmation prompt); the page manipulation all runs
-    for real.
+    fetching, subprocesses via ``run_command``, VS Code, the date and
+    confirmation prompts); the page manipulation all runs for real. The
+    stubbed ``run_command`` also blanks the featured-components diff, so the
+    blog post skeleton gets an empty table here.
     """
     from esphomerelease.model import Version
 
@@ -261,11 +172,15 @@ def _run_docs_insert_changelog(cutting, monkeypatch, version, base, prs):
     monkeypatch.setattr(
         cutting.EsphomeDocsProject, "commit", lambda msg, **k: commits.append(msg)
     )
+    monkeypatch.setattr(
+        cutting.EsphomeDocsProject, "run_command", lambda *args, **k: b""
+    )
     monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
     monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
     monkeypatch.setattr(cutting, "open_vscode", lambda path: None)
     monkeypatch.setattr(cutting, "confirm", lambda msg: None)
     monkeypatch.setattr(cutting, "gprint", lambda msg, **k: messages.append(msg))
+    monkeypatch.setattr(cutting.click, "prompt", lambda *args, **k: BLOG_DATE)
 
     cutting._docs_insert_changelog(version=version, base=Version.parse(base))
     return messages, commits
@@ -275,16 +190,12 @@ NEW_THING_ROW = '["New Thing", "/components/new_thing/", "new_thing.svg"],'
 UFM01_ROW = '["UFM-01 Flow Meter", "/components/ufm01/", "ufm01.png", "Flow & Temperature"],'
 RP2_ROW = '["RP2", "/components/rp2/", "rp2040.svg"],'
 
+BLOG_URL = "/blog/2026/07/15/esphome-2026-7/"
+
 RENDERED_PAGE = f"""\
 {FRONTMATTER}
-import ImgTable from "@components/ImgTable.astro";
-
-{{/* MANUAL: Add featured components here */}}
-<ImgTable items={{[
-  {NEW_THING_ROW}
-  {RP2_ROW}
-  {UFM01_ROW}
-]}} />
+Read the [ESPHome 2026.7.0 release notes]({BLOG_URL}) on the blog for the release
+overview, feature highlights, upgrade checklist, and breaking changes.
 """
 
 
@@ -312,25 +223,25 @@ def test_new_component_table_lines_missing_base_tag(cutting, docs_git, capsys):
 def test_render_changelog_page(cutting):
     from esphomerelease.model import Version
 
-    page = cutting._render_changelog_page(
-        Version.parse("2026.7.0"), [NEW_THING_ROW, RP2_ROW, UFM01_ROW]
-    )
+    page = cutting._render_changelog_page(Version.parse("2026.7.0"), BLOG_URL)
     assert page == RENDERED_PAGE
 
 
-def test_render_changelog_page_empty_table(cutting):
+def test_render_changelog_page_other_month(cutting):
     from esphomerelease.model import Version
 
-    page = cutting._render_changelog_page(Version.parse("2026.8.0"), [])
+    page = cutting._render_changelog_page(
+        Version.parse("2026.8.0"), "/blog/2026/08/19/esphome-2026-8/"
+    )
     assert 'title: "ESPHome 2026.8.0 - August 2026"' in page
-    assert "<ImgTable items={[\n]} />" in page
+    assert "[ESPHome 2026.8.0 release notes](/blog/2026/08/19/esphome-2026-8/)" in page
 
 
 def test_ensure_changelog_page_creates_skeleton(cutting, docs_git):
     from esphomerelease.model import Version
 
     created = cutting._ensure_changelog_page(
-        version=Version.parse("2026.7.0b1"), base=Version.parse("2026.6.0")
+        version=Version.parse("2026.7.0b1"), blog_url=BLOG_URL
     )
     assert created is True
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
@@ -343,10 +254,21 @@ def test_ensure_changelog_page_noop_when_present(cutting, docs_git):
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
     page.write_text(BETA_PAGE)
     created = cutting._ensure_changelog_page(
-        version=Version.parse("2026.7.0b2"), base=Version.parse("2026.7.0b1")
+        version=Version.parse("2026.7.0b2"), blog_url=None
     )
     assert created is False
     assert page.read_text() == BETA_PAGE
+
+
+def test_ensure_changelog_page_requires_blog_url(cutting, docs_git):
+    """A missing page cannot be created without a blog post to link to."""
+    from esphomerelease.exceptions import EsphomeReleaseError
+    from esphomerelease.model import Version
+
+    with pytest.raises(EsphomeReleaseError, match="blog post"):
+        cutting._ensure_changelog_page(
+            version=Version.parse("2026.7.0b1"), blog_url=None
+        )
 
 
 B1_PRS = [
@@ -369,22 +291,14 @@ FULL_BLOCK = f"""\
 
 ### All changes
 
-<details>
-<summary></summary>
-
 {_line(B1_PRS[0])}
 {_line(B1_PRS[1])}
 {{/* ALL_CHANGES_END */}}
 
-</details>
-
-<details>
-<summary></summary>
+### Dependency Changes
 
 {_line(B1_PRS[2])}
 {{/* DEPENDENCY_CHANGES_END */}}
-
-</details>
 """
 
 
@@ -470,14 +384,21 @@ def test_remove_beta_changes_block(cutting):
     assert cutting._remove_beta_changes_block(STABLE_PAGE) == STABLE_PAGE
 
 
+BLOG_POST_TAIL = (
+    "## Full List of Changes\n"
+    "\n"
+    "For the complete list of every merged pull request in this release, see the\n"
+    "[full 2026.7.0 changelog](/changelog/2026.7.0/).\n"
+)
+
+
 def test_insert_patch_section(cutting):
+    """Patch sections land on the blog post in a markdownlint-disabled region."""
     import datetime
 
     from esphomerelease.model import Version
 
-    content = cutting._append_full_changes_block(
-        STABLE_PAGE, [_docs_change(cutting, pr) for pr in B1_PRS]
-    )
+    content = f"narrative\n\n{BLOG_POST_TAIL}"
     patch_fix = FakePR(30, "Fix crash")
     result = cutting._insert_patch_section(
         content,
@@ -486,11 +407,13 @@ def test_insert_patch_section(cutting):
     )
     now = datetime.datetime.now()
     assert (
+        f"narrative\n\n{cutting.MD013_DISABLE}\n\n"
         f"## Release 2026.7.1 - {now:%B} {now.day}\n\n"
-        f"<details>\n<summary></summary>\n\n{_line(patch_fix)}\n\n</details>\n\n"
-        "## Full list of changes"
+        f"{_line(patch_fix)}\n\n"
+        f"{cutting.MD013_ENABLE}\n\n"
+        "## Full List of Changes"
     ) in result
-    # Re-running the same patch cut leaves the page alone.
+    # Re-running the same patch cut leaves the post alone.
     assert (
         cutting._insert_patch_section(
             result,
@@ -500,14 +423,30 @@ def test_insert_patch_section(cutting):
         == result
     )
 
+    # The next patch appends inside the existing region, after the first.
+    patch_fix2 = FakePR(31, "Fix other crash")
+    result2 = cutting._insert_patch_section(
+        result,
+        version=Version.parse("2026.7.2"),
+        changes=[_docs_change(cutting, patch_fix2)],
+    )
+    assert result2.count(cutting.MD013_DISABLE) == 1
+    assert result2.count(cutting.MD013_ENABLE) == 1
+    assert (
+        f"{_line(patch_fix)}\n\n"
+        f"## Release 2026.7.2 - {now:%B} {now.day}\n\n"
+        f"{_line(patch_fix2)}\n\n"
+        f"{cutting.MD013_ENABLE}"
+    ) in result2
+
 
 def test_insert_patch_section_missing_heading_raises(cutting):
     from esphomerelease.exceptions import EsphomeReleaseError
     from esphomerelease.model import Version
 
-    with pytest.raises(EsphomeReleaseError, match="Full list of changes"):
+    with pytest.raises(EsphomeReleaseError, match="Full List of Changes"):
         cutting._insert_patch_section(
-            STABLE_PAGE,
+            "no anchors here\n",
             version=Version.parse("2026.7.1"),
             changes=[_docs_change(cutting, FakePR(30, "Fix crash"))],
         )
@@ -564,23 +503,32 @@ def test_changelog_generate_with_sections(cutting):
 
 
 def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
-    """Full cycle: the first beta writes the page, later cuts merge into it."""
+    """Full cycle: the first beta writes the pages, later cuts merge into them."""
     from esphomerelease.model import Version
 
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
+    post = (
+        docs_git / "src" / "content" / "docs" / "blog"
+        / "2026" / "07" / "15" / "esphome-2026-7.mdx"
+    )
 
-    # First beta: page skeleton + full changes block + beta notice.
+    # First beta: blog post + page skeleton + full changes block + beta notice.
     messages, commits = _run_docs_insert_changelog(
         cutting, monkeypatch, Version.parse("2026.7.0b1"), "2026.6.0", B1_PRS
     )
     expected = (RENDERED_PAGE.rstrip("\n") + "\n\n" + FULL_BLOCK).replace(
-        '\n\nimport ImgTable from "@components/ImgTable.astro";',
-        f'\n\n{NOTICE}\n\nimport ImgTable from "@components/ImgTable.astro";',
+        "\n\nRead the [ESPHome 2026.7.0",
+        f"\n\n{NOTICE}\n\nRead the [ESPHome 2026.7.0",
     )
     assert page.read_text() == expected
+    assert post.read_text().count(NOTICE) == 1
+    assert "Created release notes blog post esphome-2026-7.mdx" in messages
     assert "Created changelog page 2026.7.0.mdx" in messages
     assert "Changelog written to 2026.7.0.mdx" in messages
-    assert commits == ["Update changelog for 2026.7.0b1"]
+    assert commits == [
+        "Update release notes blog post for 2026.7.0b1",
+        "Update changelog for 2026.7.0b1",
+    ]
 
     # Second beta: new lines merge into the beta/all/dependency blocks.
     beta_fix = FakePR(10, "Fix beta bug")
@@ -603,7 +551,11 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     ) in content
     assert content.count(NOTICE) == 1
     assert content.count(_line(B1_PRS[1])) == 1
-    assert commits == ["Update changelog for 2026.7.0b2"]
+    assert post.read_text().count(NOTICE) == 1
+    assert commits == [
+        "Update release notes blog post for 2026.7.0b2",
+        "Update changelog for 2026.7.0b2",
+    ]
 
     # Stable: beta notice + Beta Changes block removed, stragglers merged in.
     straggler = FakePR(20, "Straggler fix")
@@ -620,20 +572,28 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert "### Beta Changes" not in content
     assert f"{_line(beta_fix)}\n{_line(straggler)}\n{{/* ALL_CHANGES_END */}}" in content
     assert content.count(_line(beta_fix)) == 1
-    assert commits == ["Update changelog for 2026.7.0"]
+    assert NOTICE not in post.read_text()
+    assert commits == [
+        "Update release notes blog post for 2026.7.0",
+        "Update changelog for 2026.7.0",
+    ]
 
-    # Patch: its own release section lands right before the full list.
+    # Patch: its release section lands on the blog post, inside a fresh
+    # markdownlint-disabled region; the changelog page is left alone.
+    page_before = page.read_text()
     patch_fix = FakePR(30, "Fix crash")
     _, commits = _run_docs_insert_changelog(
         cutting, monkeypatch, Version.parse("2026.7.1"), "2026.7.0", [patch_fix]
     )
-    content = page.read_text()
+    assert page.read_text() == page_before
+    content = post.read_text()
     assert "## Release 2026.7.1 - " in content
     assert (
-        f"<details>\n<summary></summary>\n\n{_line(patch_fix)}\n\n</details>\n\n"
-        "## Full list of changes"
+        f"{_line(patch_fix)}\n\n"
+        f"{cutting.MD013_ENABLE}\n\n"
+        "## Full List of Changes"
     ) in content
     assert content.index("## Release 2026.7.1") < content.index(
-        "## Full list of changes"
+        "## Full List of Changes"
     )
-    assert commits == ["Update changelog for 2026.7.1"]
+    assert commits == ["Update release notes blog post for 2026.7.1"]
