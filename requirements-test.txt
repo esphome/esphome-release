@@ -1,0 +1,3 @@
+# Test-only dependencies. Kept separate from runtime requirements.txt so the
+# release tool's install footprint stays minimal.
+pytest>=7,<9
