@@ -160,11 +160,16 @@ def _run_docs_insert_changelog(cutting, monkeypatch, version, base, prs):
     confirmation prompts); the page manipulation all runs for real. The
     stubbed ``run_command`` also blanks the featured-components diff, so the
     blog post skeleton gets an empty table here.
+
+    Returns the printed messages, the commit messages, the paths handed to VS
+    Code and the confirmation questions asked, in the order they happened.
     """
     from esphomerelease.model import Version
 
     messages = []
     commits = []
+    opened = []
+    confirmed = []
     fake = FakeProject(prs)
     monkeypatch.setattr(
         cutting.EsphomeDocsProject, "workon", lambda branch: contextlib.nullcontext()
@@ -177,13 +182,13 @@ def _run_docs_insert_changelog(cutting, monkeypatch, version, base, prs):
     )
     monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
     monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
-    monkeypatch.setattr(cutting, "open_vscode", lambda path: None)
-    monkeypatch.setattr(cutting, "confirm", lambda msg: None)
+    monkeypatch.setattr(cutting, "open_vscode", lambda *paths: opened.append(paths))
+    monkeypatch.setattr(cutting, "confirm", confirmed.append)
     monkeypatch.setattr(cutting, "gprint", lambda msg, **k: messages.append(msg))
     monkeypatch.setattr(cutting.click, "prompt", lambda *args, **k: BLOG_DATE)
 
     cutting._docs_insert_changelog(version=version, base=Version.parse(base))
-    return messages, commits
+    return messages, commits, opened, confirmed
 
 
 NEW_THING_ROW = '["New Thing", "/components/new_thing/", "new_thing.svg"],'
@@ -513,7 +518,7 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     )
 
     # First beta: blog post + page skeleton + full changes block + beta notice.
-    messages, commits = _run_docs_insert_changelog(
+    messages, commits, opened, confirmed = _run_docs_insert_changelog(
         cutting, monkeypatch, Version.parse("2026.7.0b1"), "2026.6.0", B1_PRS
     )
     expected = (RENDERED_PAGE.rstrip("\n") + "\n\n" + FULL_BLOCK).replace(
@@ -525,15 +530,16 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert "Created release notes blog post esphome-2026-7.mdx" in messages
     assert "Created changelog page 2026.7.0.mdx" in messages
     assert "Changelog written to 2026.7.0.mdx" in messages
-    assert commits == [
-        "Update release notes blog post for 2026.7.0b1",
-        "Update changelog for 2026.7.0b1",
-    ]
+    # The post and the page are reviewed together, and only then committed:
+    # nothing reaches a commit before the user has read it.
+    assert opened == [(str(post), str(page))]
+    assert confirmed == ["Do the release notes and changelog page look correct?"]
+    assert commits == ["Update release notes for 2026.7.0b1"]
 
     # Second beta: new lines merge into the beta/all/dependency blocks.
     beta_fix = FakePR(10, "Fix beta bug")
     beta_dep = FakePR(11, "Bump dep2 from 1 to 2", ["dependencies"])
-    _, commits = _run_docs_insert_changelog(
+    _, commits, opened, confirmed = _run_docs_insert_changelog(
         cutting,
         monkeypatch,
         Version.parse("2026.7.0b2"),
@@ -552,14 +558,14 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert content.count(NOTICE) == 1
     assert content.count(_line(B1_PRS[1])) == 1
     assert post.read_text().count(NOTICE) == 1
-    assert commits == [
-        "Update release notes blog post for 2026.7.0b2",
-        "Update changelog for 2026.7.0b2",
-    ]
+    # The post only gained the beta notice, so only the page is worth reading.
+    assert opened == [(str(page),)]
+    assert confirmed == ["Does the changelog page look correct?"]
+    assert commits == ["Update release notes for 2026.7.0b2"]
 
     # Stable: beta notice + Beta Changes block removed, stragglers merged in.
     straggler = FakePR(20, "Straggler fix")
-    _, commits = _run_docs_insert_changelog(
+    _, commits, _, _ = _run_docs_insert_changelog(
         cutting,
         monkeypatch,
         Version.parse("2026.7.0"),
@@ -573,17 +579,14 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert f"{_line(beta_fix)}\n{_line(straggler)}\n{{/* ALL_CHANGES_END */}}" in content
     assert content.count(_line(beta_fix)) == 1
     assert NOTICE not in post.read_text()
-    assert commits == [
-        "Update release notes blog post for 2026.7.0",
-        "Update changelog for 2026.7.0",
-    ]
+    assert commits == ["Update release notes for 2026.7.0"]
 
     # Patch: its release section lands on the blog post, inside a fresh
     # markdownlint-disabled region; the changelog page is left alone.
     page_before = page.read_text()
     # Patch PRs are cherry-picked from the patch milestone, so they carry it.
     patch_fix = FakePR(30, "Fix crash", milestone="2026.7.1")
-    _, commits = _run_docs_insert_changelog(
+    _, commits, opened, confirmed = _run_docs_insert_changelog(
         cutting, monkeypatch, Version.parse("2026.7.1"), "2026.7.0", [patch_fix]
     )
     assert page.read_text() == page_before
@@ -597,4 +600,23 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert content.index("## Release 2026.7.1") < content.index(
         "## Full List of Changes"
     )
+    # A patch leaves the changelog page alone, so only the post is reviewed.
+    assert opened == [(str(post),)]
+    assert confirmed == ["Does the release notes blog post look correct?"]
     assert commits == ["Update release notes blog post for 2026.7.1"]
+
+
+def test_docs_insert_changelog_without_a_blog_post(cutting, docs_git, monkeypatch):
+    """A cycle from before release notes moved to the blog: page only."""
+    from esphomerelease.model import Version
+
+    page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
+    page.write_text(RENDERED_PAGE)
+
+    messages, commits, opened, confirmed = _run_docs_insert_changelog(
+        cutting, monkeypatch, Version.parse("2026.7.0b2"), "2026.7.0b1", B1_PRS
+    )
+    assert "No release notes blog post for 2026.7.0b2, skipping" in messages
+    assert opened == [(str(page),)]
+    assert confirmed == ["Does the changelog page look correct?"]
+    assert commits == ["Update changelog for 2026.7.0b2"]

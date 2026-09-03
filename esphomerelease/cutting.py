@@ -712,9 +712,9 @@ def _render_blog_post(
     The template (``script/blog_post_template.mdx`` in the docs checkout)
     carries the frontmatter and marker-delimited narrative sections; here only
     the version, date and path placeholders are filled, plus the featured
-    components table drafted from the index diff. ``{TAGLINE}`` and
-    ``{DESCRIPTION}`` are left as-is for manual fill during the beta, the
-    same convention as the docs repo's ``generate_release_notes.py``.
+    components table drafted from the index diff. The narrative sections,
+    ``{TAGLINE}`` and ``{DESCRIPTION}`` are filled straight afterwards by
+    :func:`_generate_release_notes`.
     """
     template_path = EsphomeDocsProject.path / BLOG_TEMPLATE
     if not template_path.exists():
@@ -742,19 +742,102 @@ def _render_blog_post(
     return content
 
 
-def _docs_update_blog_post(*, version: Version, base: Version) -> str | None:
-    """Create or refresh the cycle's release notes blog post; returns its URL.
+# The docs repo's release notes generator. Run without arguments beyond the
+# version it discovers the cycle's PRs and writes the AI prompts; with
+# ``--assemble`` it fills the blog post's narrative sections from the AI's
+# responses. ``--blog-only`` keeps it off the changelog page, which the cut
+# writes itself (see :func:`_docs_insert_changelog`).
+RELEASE_NOTES_SCRIPT = "script/generate_release_notes.py"
+
+# The prompt files the generator writes, each answered in turn. Missing ones
+# are skipped: not every cycle has, say, undocumented API changes to describe.
+RELEASE_NOTES_PROMPTS = (
+    "overview_and_highlights.txt",
+    "breaking_changes.txt",
+    "contributors.txt",
+)
+
+# The CLI that answers the generated prompts, writing its responses into the
+# generator's cache directory for ``--assemble`` to pick up.
+CLAUDE_CLI = "claude"
+
+
+def _run_docs_command(*args: str) -> bool:
+    """Run a command in the docs checkout; report a failure instead of raising.
+
+    The release notes pass is best effort - the prompts, the AI and the
+    assembly can each fail on their own, and the CLI answering the prompts may
+    not even be installed - and none of it is worth aborting a cut over, since
+    the post can always be written by hand.
+    """
+    try:
+        EsphomeDocsProject.run_command(*args, live=True, fail_ok=True)
+    except (EsphomeReleaseError, OSError) as err:
+        gprint(f"Running {args[0]} failed: {err}", fg="red")
+        return False
+    return True
+
+
+def _generate_release_notes(version: Version) -> None:
+    """Fill the new blog post's narrative sections, tagline and description.
+
+    Runs the three steps documented in the docs repo's
+    ``generate_release_notes.py``: discover the cycle's PRs and write the AI
+    prompts, answer each prompt with the Claude CLI, then assemble the
+    responses into the blog post created just before this. Doing it here means
+    the post is complete - not a skeleton of markers - by the time the cut asks
+    whether it looks correct.
+
+    Stops at the first failing step, leaving the post's markers and
+    placeholders in place for a manual pass.
+    """
+    stable = version.replace(patch=0, beta=0, dev=False)
+    gprint(f"Generating the release notes for {stable}")
+    if not _run_docs_command(RELEASE_NOTES_SCRIPT, str(stable)):
+        return
+    prompts_dir = Path("script") / "cache" / str(stable) / "prompts"
+    for name in RELEASE_NOTES_PROMPTS:
+        prompt = prompts_dir / name
+        if not (EsphomeDocsProject.path / prompt).exists():
+            gprint(f"No {name} prompt was generated, skipping it")
+            continue
+        gprint(f"Answering {name} with {CLAUDE_CLI}")
+        if not _run_docs_command(
+            CLAUDE_CLI,
+            "--permission-mode",
+            "acceptEdits",
+            "-p",
+            f"Read {prompt} and follow the instructions in it.",
+        ):
+            return
+    _run_docs_command(RELEASE_NOTES_SCRIPT, str(stable), "--assemble", "--blog-only")
+
+
+def _docs_update_blog_post(
+    *, version: Version, base: Version
+) -> tuple[str | None, Path | None]:
+    """Create or refresh the cycle's release notes blog post.
 
     The first beta creates the skeleton (the date defaults to the release
-    Wednesday and is confirmed by the user); later cuts find the post already
-    in the tree via the merge/branch they were cut from. Betas carry the beta
-    notice, the stable release removes it, and patch releases append their
-    "Release x.y.z" section to the post (see :func:`_insert_patch_section`).
+    Wednesday and is confirmed by the user) and hands it to
+    :func:`_generate_release_notes` to be written; later cuts find the post
+    already in the tree via the merge/branch they were cut from. Any
+    placeholder the generator left behind is called out before the post is
+    reviewed. Betas carry the beta notice, the stable release removes it, and
+    patch releases append their "Release x.y.z" section to the post (see
+    :func:`_insert_patch_section`).
     Afterwards ``script/bump-version.py`` is re-run so the docs repo rewrites
     ``data/version.json`` with the post's URL as ``blog_url`` (the version
     bump itself ran before this post existed).
 
-    Returns ``None`` without touching anything when no post exists and this
+    Returns ``(url, path to review)``: the post's URL, and its path when the
+    cut wrote something a human should look at (a post created this cut, or a
+    patch section just inserted) - ``None`` when there is nothing new to read.
+    Nothing is committed here: :func:`_docs_insert_changelog` shows the post
+    and the changelog page together and commits once the user is happy, so a
+    post nobody has read yet can never end up in the release.
+
+    The URL is ``None``, with nothing touched, when no post exists and this
     isn't a first-beta cut (cycles from before release notes moved to the
     blog), leaving ``blog_url`` pointing at the newest published post.
     """
@@ -765,7 +848,7 @@ def _docs_update_blog_post(*, version: Version, base: Version) -> str | None:
         if path is None:
             if version.beta != 1:
                 gprint(f"No release notes blog post for {version}, skipping")
-                return None
+                return None, None
             date = _prompt_blog_date(version)
             path = (
                 EsphomeDocsProject.path
@@ -778,11 +861,14 @@ def _docs_update_blog_post(*, version: Version, base: Version) -> str | None:
             path.write_text(_render_blog_post(version, date=date, featured=featured))
             created = True
             gprint(f"Created release notes blog post {path.name}")
-            gprint(
-                "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually"
-            )
+            _generate_release_notes(version)
 
         content = path.read_text()
+        if "{TAGLINE}" in content or "{DESCRIPTION}" in content:
+            gprint(
+                "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually",
+                fg="red",
+            )
         review = created
         if version.patch > 0 and not version.beta:
             changes = _docs_changes(version=version, base=base)
@@ -799,13 +885,7 @@ def _docs_update_blog_post(*, version: Version, base: Version) -> str | None:
         # post in the tree; re-run the bump so it sees the post just written.
         EsphomeDocsProject.run_command("script/bump-version.py", str(version))
 
-        if review:
-            open_vscode(str(path))
-            confirm("Does the release notes blog post look correct?")
-        EsphomeDocsProject.commit(
-            f"Update release notes blog post for {version}", ignore_empty=True
-        )
-        return _blog_post_url(path)
+        return _blog_post_url(path), (path if review else None)
 
 
 def _render_changelog_page(changelog_version: Version, blog_url: str) -> str:
@@ -861,12 +941,24 @@ def _ensure_changelog_page(*, version: Version, blog_url: str | None) -> bool:
 
 
 def _docs_insert_changelog(*, version: Version, base: Version):
-    blog_url = _docs_update_blog_post(version=version, base=base)
+    """Write the cycle's release notes and changelog page, review, then commit.
+
+    Both pages are written before anything is shown, so the user reviews the
+    finished pair in one pass and nothing reaches a commit unread.
+    """
+    blog_url, blog_review = _docs_update_blog_post(version=version, base=base)
+    branch_name = _bump_branch_name(version)
     if version.patch > 0 and not version.beta:
         # A patch's release notes go onto the cycle's blog post (handled
         # above); the changelog page only carries the .0 release's full list.
+        with EsphomeDocsProject.workon(branch_name):
+            if blog_review is not None:
+                open_vscode(str(blog_review))
+                confirm("Does the release notes blog post look correct?")
+            EsphomeDocsProject.commit(
+                f"Update release notes blog post for {version}", ignore_empty=True
+            )
         return
-    branch_name = _bump_branch_name(version)
     with EsphomeDocsProject.workon(branch_name):
         changelog_path = _changelog_page_path(version)
         if _ensure_changelog_page(version=version, blog_url=blog_url):
@@ -888,9 +980,19 @@ def _docs_insert_changelog(*, version: Version, base: Version):
 
         changelog_path.write_text(content)
         gprint(f"Changelog written to {changelog_path.name}")
-        open_vscode(str(changelog_path))
-        confirm("Does the changelog page look correct?")
-        EsphomeDocsProject.commit(f"Update changelog for {version}")
+
+        if blog_review is not None:
+            open_vscode(str(blog_review), str(changelog_path))
+            confirm("Do the release notes and changelog page look correct?")
+        else:
+            open_vscode(str(changelog_path))
+            confirm("Does the changelog page look correct?")
+        # One commit: ``commit`` stages the whole tree, so splitting the post
+        # and the page apart here would only produce an empty second commit.
+        if blog_url is None:
+            EsphomeDocsProject.commit(f"Update changelog for {version}")
+        else:
+            EsphomeDocsProject.commit(f"Update release notes for {version}")
 
 
 def _docs_update_supporters(*, version: Version):

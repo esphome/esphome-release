@@ -188,6 +188,10 @@ def _run_update_blog_post(
     ``git`` commands run for real so the featured-components diff is
     exercised when the ``docs_git`` fixture is in play. Non-git commands
     (``script/bump-version.py``) are recorded.
+
+    Reviewing and committing the post is ``_docs_insert_changelog``'s job (it
+    shows the post next to the changelog page), so ``commits`` and ``opened``
+    stay empty here - see ``test_beta_notice.py`` for that half.
     """
     from esphomerelease.model import Version
 
@@ -222,14 +226,14 @@ def _run_update_blog_post(
         monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
         monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
 
-    url = cutting._docs_update_blog_post(
+    url, review = cutting._docs_update_blog_post(
         version=Version.parse(version_str), base=Version.parse(base_str)
     )
-    return url, commits, commands, messages, opened
+    return url, review, commits, commands, messages, opened
 
 
 def test_update_blog_post_first_beta_creates_post(cutting, docs_git, monkeypatch):
-    url, commits, commands, messages, opened = _run_update_blog_post(
+    url, review, commits, commands, messages, opened = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.0b1", "2026.6.0", prompts=["2026-07-15"]
     )
     post = _post_path(cutting)
@@ -240,10 +244,22 @@ def test_update_blog_post_first_beta_creates_post(cutting, docs_git, monkeypatch
     assert ROW in content
     assert '["UFM-01 Flow Meter", "/components/ufm01/"' in content
     assert ("script/bump-version.py", "2026.7.0b1") in commands
-    assert opened == [str(post)]
+    # Handed back for review, not shown or committed here.
+    assert review == post
+    assert opened == []
+    assert commits == []
     assert "Created release notes blog post esphome-2026-7.mdx" in messages
+    # The skeleton is handed straight to the docs repo's release notes
+    # generator, before the post is opened for review.
+    assert (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0") in commands
+    assert (
+        cutting.RELEASE_NOTES_SCRIPT,
+        "2026.7.0",
+        "--assemble",
+        "--blog-only",
+    ) in commands
+    # Nothing answered the prompts here, so the placeholders are still called out.
     assert "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually" in messages
-    assert commits == ["Update release notes blog post for 2026.7.0b1"]
 
 
 def test_update_blog_post_later_beta_keeps_notice(cutting, monkeypatch):
@@ -251,14 +267,16 @@ def test_update_blog_post_later_beta_keeps_notice(cutting, monkeypatch):
     post.parent.mkdir(parents=True)
     post.write_text(EXPECTED_POST)
 
-    url, commits, commands, _, opened = _run_update_blog_post(
+    url, review, commits, commands, _, opened = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1"
     )
     assert url == "/blog/2026/07/15/esphome-2026-7/"
     assert post.read_text().count(NOTICE) == 1
     assert ("script/bump-version.py", "2026.7.0b2") in commands
+    # Only the beta notice changed, so there is nothing new to read.
+    assert review is None
     assert opened == []
-    assert commits == ["Update release notes blog post for 2026.7.0b2"]
+    assert commits == []
 
 
 def test_update_blog_post_stable_removes_notice(cutting, monkeypatch):
@@ -266,13 +284,14 @@ def test_update_blog_post_stable_removes_notice(cutting, monkeypatch):
     post.parent.mkdir(parents=True)
     post.write_text(cutting._with_beta_notice(EXPECTED_POST))
 
-    url, commits, commands, _, _ = _run_update_blog_post(
+    url, review, commits, commands, _, _ = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.0", "2026.6.0"
     )
     assert url == "/blog/2026/07/15/esphome-2026-7/"
     assert post.read_text() == EXPECTED_POST
     assert ("script/bump-version.py", "2026.7.0") in commands
-    assert commits == ["Update release notes blog post for 2026.7.0"]
+    assert review is None
+    assert commits == []
 
 
 def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
@@ -285,7 +304,7 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
 
     # Patch PRs are cherry-picked from the patch milestone, so they carry it.
     fix = FakePR(30, "Fix crash", milestone="2026.7.1")
-    url, commits, commands, _, opened = _run_update_blog_post(
+    url, review, commits, commands, _, opened = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.1", "2026.7.0", prs=[fix]
     )
     content = post.read_text()
@@ -299,8 +318,10 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
     ) in content
     assert url == "/blog/2026/07/15/esphome-2026-7/"
     assert ("script/bump-version.py", "2026.7.1") in commands
-    assert opened == [str(post)]
-    assert commits == ["Update release notes blog post for 2026.7.1"]
+    # The inserted patch section is new text, so it is handed back for review.
+    assert review == post
+    assert opened == []
+    assert commits == []
 
     # The next patch appends inside the existing region, after the first.
     fix2 = FakePR(31, "Fix other crash")
@@ -313,22 +334,188 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
         < content.index("## Full List of Changes")
     )
 
-    # Re-running a patch cut is idempotent and skips the review prompt.
+    # Re-running a patch cut is idempotent and asks for no review.
     before = post.read_text()
-    _, _, _, _, opened = _run_update_blog_post(
+    _, review, _, _, _, _ = _run_update_blog_post(
         cutting, monkeypatch, "2026.7.2", "2026.7.1", prs=[fix2]
     )
     assert post.read_text() == before
-    assert opened == []
+    assert review is None
 
 
 @pytest.mark.parametrize("version_str", ["2026.7.1", "2026.7.0b2", "2026.7.0"])
 def test_update_blog_post_missing_post_skips(cutting, monkeypatch, version_str):
     """Cuts of pre-blog cycles leave the tree and version.json alone."""
-    url, commits, commands, messages, _ = _run_update_blog_post(
+    url, review, commits, commands, messages, _ = _run_update_blog_post(
         cutting, monkeypatch, version_str, "2026.6.0"
     )
     assert url is None
+    assert review is None
     assert commits == []
     assert commands == []
     assert messages == [f"No release notes blog post for {version_str}, skipping"]
+
+
+def _prompts_dir(cutting) -> Path:
+    return (
+        Path(cutting.EsphomeDocsProject.path)
+        / "script" / "cache" / "2026.7.0" / "prompts"
+    )
+
+
+def _write_prompts(cutting, names) -> None:
+    prompts = _prompts_dir(cutting)
+    prompts.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (prompts / name).write_text("follow these instructions")
+
+
+def _fake_docs_commands(cutting, monkeypatch, *, fail_on=None):
+    """Record the docs-repo commands, failing the one ``fail_on`` matches."""
+    from esphomerelease.exceptions import EsphomeReleaseError
+
+    commands = []
+    kwargs_seen = []
+    messages = []
+
+    def fake_run_command(*args, **kwargs):
+        commands.append(args)
+        kwargs_seen.append(kwargs)
+        if fail_on is not None and fail_on(args):
+            raise EsphomeReleaseError("Failed running command!")
+        return b""
+
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "run_command", fake_run_command)
+    monkeypatch.setattr(cutting, "gprint", lambda msg, **k: messages.append(msg))
+    return commands, kwargs_seen, messages
+
+
+def _claude_call(cutting, name: str) -> tuple:
+    prompt = Path("script") / "cache" / "2026.7.0" / "prompts" / name
+    return (
+        cutting.CLAUDE_CLI,
+        "--permission-mode",
+        "acceptEdits",
+        "-p",
+        f"Read {prompt} and follow the instructions in it.",
+    )
+
+
+def test_generate_release_notes_runs_every_step(cutting, monkeypatch):
+    """Prompts, then the AI pass for each, then the blog-only assembly."""
+    from esphomerelease.model import Version
+
+    _write_prompts(cutting, cutting.RELEASE_NOTES_PROMPTS)
+    commands, kwargs_seen, _ = _fake_docs_commands(cutting, monkeypatch)
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        *[_claude_call(cutting, name) for name in cutting.RELEASE_NOTES_PROMPTS],
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+    ]
+    # Output is streamed, and a failure is reported rather than prompting for
+    # an interactive retry of a command this cut can do without.
+    assert all(kw == {"live": True, "fail_ok": True} for kw in kwargs_seen)
+
+
+def test_generate_release_notes_skips_prompts_that_were_not_written(
+    cutting, monkeypatch
+):
+    """A cycle without breaking changes gets no such prompt: skip, don't fail."""
+    from esphomerelease.model import Version
+
+    _write_prompts(cutting, ["contributors.txt"])
+    commands, _, messages = _fake_docs_commands(cutting, monkeypatch)
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        _claude_call(cutting, "contributors.txt"),
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+    ]
+    assert "No overview_and_highlights.txt prompt was generated, skipping it" in messages
+    assert "No breaking_changes.txt prompt was generated, skipping it" in messages
+
+
+def test_generate_release_notes_stops_when_the_prompts_fail(cutting, monkeypatch):
+    """Without prompts there is nothing to answer or assemble."""
+    from esphomerelease.model import Version
+
+    _write_prompts(cutting, cutting.RELEASE_NOTES_PROMPTS)
+    commands, _, messages = _fake_docs_commands(
+        cutting, monkeypatch, fail_on=lambda args: args[0] == cutting.RELEASE_NOTES_SCRIPT
+    )
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [(cutting.RELEASE_NOTES_SCRIPT, "2026.7.0")]
+    assert any(
+        msg.startswith(f"Running {cutting.RELEASE_NOTES_SCRIPT} failed")
+        for msg in messages
+    )
+
+
+def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatch):
+    """A half-answered set of prompts must not be assembled into the post."""
+    from esphomerelease.model import Version
+
+    _write_prompts(cutting, cutting.RELEASE_NOTES_PROMPTS)
+    commands, _, messages = _fake_docs_commands(
+        cutting, monkeypatch, fail_on=lambda args: args[0] == cutting.CLAUDE_CLI
+    )
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
+    ]
+    assert any(
+        msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages
+    )
+
+
+def test_update_blog_post_filled_post_does_not_warn(cutting, monkeypatch):
+    """Once the generator has filled the post, the manual hint stays quiet."""
+    post = _post_path(cutting)
+    post.parent.mkdir(parents=True)
+    post.write_text(
+        EXPECTED_POST.replace("{TAGLINE}", "Faster Everything").replace(
+            "{DESCRIPTION}", "A release about speed."
+        )
+    )
+
+    _, _, _, _, messages, _ = _run_update_blog_post(
+        cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1"
+    )
+    assert not any("placeholders manually" in msg for msg in messages)
+
+
+def test_generate_release_notes_survives_a_missing_cli(cutting, monkeypatch):
+    """The AI CLI not being installed is a skipped step, not a failed cut."""
+    from esphomerelease.model import Version
+
+    _write_prompts(cutting, cutting.RELEASE_NOTES_PROMPTS)
+    commands, _, messages = _fake_docs_commands(cutting, monkeypatch)
+    real_fake = cutting.EsphomeDocsProject.run_command
+
+    def fake_run_command(*args, **kwargs):
+        real_fake(*args, **kwargs)
+        if args[0] == cutting.CLAUDE_CLI:
+            raise FileNotFoundError(2, "No such file or directory", cutting.CLAUDE_CLI)
+        return b""
+
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "run_command", fake_run_command)
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
+    ]
+    assert any(
+        msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages
+    )
