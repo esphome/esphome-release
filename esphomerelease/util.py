@@ -31,8 +31,12 @@ def open_vscode(*paths):
 
 
 def gprint(s, *args, fg="green"):
-    """Print with green text."""
-    click.secho(s.format(*args), fg=fg)
+    """Print with green text.
+
+    Only formatted when args are passed, so that literal braces in a plain
+    message (like the ``{TAGLINE}`` placeholders) don't blow up.
+    """
+    click.secho(s.format(*args) if args else s, fg=fg)
 
 
 def wait_for_netlify(version: Version):
