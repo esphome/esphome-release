@@ -208,6 +208,28 @@ class Project:
         issues = self._milestone_pr_issues(milestone, "open")
         return self.get_prs([issue.number for issue in issues])
 
+    def move_open_prs_to_milestone(
+        self, milestone: Milestone, target_title: str
+    ) -> List[Issue]:
+        """Move every open PR on ``milestone`` onto the ``target_title`` milestone.
+
+        Used when a cut goes ahead with PRs still open on the milestone it is
+        about to close: parking them on the next milestone keeps them on the
+        board instead of losing them behind a closed one. The target is only
+        created when there is something to move.
+        """
+        if milestone is None:
+            return []
+
+        issues = self._milestone_pr_issues(milestone, "open")
+        if not issues:
+            return []
+
+        target = self.ensure_milestone(target_title)
+        for issue in issues:
+            issue.edit(milestone=target.number)
+        return issues
+
     def get_next_beta_prs_for_milestone(
         self, milestone: Milestone
     ) -> List[PullRequest]:

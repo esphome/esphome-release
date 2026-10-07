@@ -51,14 +51,39 @@ def _cycle_milestone_title(version: Version) -> str:
     return str(version.replace(beta=0, dev=False))
 
 
+def _move_open_prs_to_next_patch_milestone(version: Version):
+    """Punt the PRs still open on this patch milestone to the next patch.
+
+    Chosen from the open-PR gate when the cut should go ahead without them:
+    the milestone being cut is closed at the end of the cut, so leaving the
+    PRs on it would lose track of them. They move to the next patch milestone
+    (created if it does not exist yet) instead.
+    """
+    milestone_title = _cycle_milestone_title(version)
+    next_title = str(version.next_patch_version)
+    for proj in [EsphomeProject, EsphomeDocsProject]:
+        milestone = proj.get_milestone_by_title(milestone_title)
+        for issue in proj.move_open_prs_to_milestone(milestone, next_title):
+            gprint(
+                f"Moved [{proj.shortname}] #{issue.number} to the "
+                f"{next_title} milestone"
+            )
+
+
 def _check_open_milestone_prs(version: Version, *, block: bool):
     """Check for open PRs on the cycle milestone.
 
     Open PRs are always reported. When ``block`` is True (full releases) the
     user must clear the milestone or abort; for betas this only warns and
     continues.
+
+    A patch release additionally offers "ignore": the open PRs are moved to
+    the next patch milestone and the cut carries on. Nothing is lost - the
+    PRs just miss this patch - whereas on a ``.0`` cut the open PRs belong to
+    the cycle being wrapped up and there is no equivalent obvious target.
     """
     milestone_title = _cycle_milestone_title(version)
+    can_ignore = block and not version.beta and not version.dev and version.patch > 0
     while True:
         open_prs = []
         for proj in [EsphomeProject, EsphomeDocsProject]:
@@ -81,11 +106,30 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
         if not block:
             return
 
-        if not click.confirm(
-            click.style("Check again?", fg="yellow"),
-            default=True,
-        ):
+        if not can_ignore:
+            if not click.confirm(
+                click.style("Check again?", fg="yellow"),
+                default=True,
+            ):
+                raise EsphomeReleaseError("Aborted: open PRs on milestone")
+            continue
+
+        next_title = str(version.next_patch_version)
+        choice = click.prompt(
+            click.style(
+                f"[y] check again, [i] ignore (move to the {next_title} "
+                "milestone and cut anyway), [n] abort",
+                fg="yellow",
+            ),
+            type=click.Choice(["y", "i", "n"]),
+            default="y",
+            show_default=True,
+        )
+        if choice == "n":
             raise EsphomeReleaseError("Aborted: open PRs on milestone")
+        if choice == "i":
+            _move_open_prs_to_next_patch_milestone(version)
+            return
 
 
 DocsPRPair = tuple[PullRequest, PullRequest]
