@@ -319,7 +319,7 @@ def test_unmerged_docs_pr_blocks_then_passes_on_recheck(modules, monkeypatch, ca
     assert docs_repo.pull_request_calls == [7071, 7071]
 
     out = capsys.readouterr().out
-    assert "1 unmerged docs PR(s)" in out
+    assert "1 unmerged docs PR(s) for 1 PR(s)" in out
     assert "esphome#17797 Arbitrate the default route" in out
     assert "needs docs#7071: Document default-route arbitration" in out
 
@@ -343,6 +343,47 @@ def test_unmerged_docs_pr_declining_recheck_aborts(modules, monkeypatch, capsys)
 
     with pytest.raises(EsphomeReleaseError, match="unmerged docs PRs"):
         cutting._check_linked_docs_prs(VERSION)
+
+
+def test_shared_docs_pr_counted_once(modules, monkeypatch, capsys):
+    """Several code PRs pairing with one docs PR count it once, not per pair."""
+    cutting = modules
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(20347), FakeIssue(20348), FakeIssue(20350)],
+        pulls={
+            20347: FakePull(
+                20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
+            ),
+            20348: FakePull(
+                20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
+            ),
+            20350: FakePull(
+                20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)
+            ),
+        },
+    )
+    docs_repo = FakeRepo(
+        pulls={
+            7564: FakePull(
+                7564,
+                body=_docs_body(20347) + _docs_body(20348),
+                repo="esphome.io",
+            ),
+            7565: FakePull(7565, body=_docs_body(20350), repo="esphome.io"),
+        }
+    )
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+
+    with pytest.raises(EsphomeReleaseError):
+        cutting._check_linked_docs_prs(VERSION)
+
+    out = capsys.readouterr().out
+    assert "2 unmerged docs PR(s) for 3 PR(s)" in out
+    # Every code PR still gets its own line.
+    for number in (20347, 20348, 20350):
+        assert f"esphome#{number}" in out
 
 
 def test_blocking_and_unconfirmed_reported_together(modules, monkeypatch, capsys):

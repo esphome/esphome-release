@@ -208,8 +208,13 @@ def _check_linked_docs_prs(version: Version):
         if not unmerged:
             return
 
+        # Several code PRs can share one docs PR, so count the docs PRs and the
+        # code PRs separately rather than the pairs.
+        docs_count = len({docs_pr.number for _, docs_pr in unmerged})
+        code_count = len({code_pr.number for code_pr, _ in unmerged})
         gprint(click.style(
-            f"Error: Found {len(unmerged)} unmerged docs PR(s) for PRs in this release:",
+            f"Error: Found {docs_count} unmerged docs PR(s) for {code_count} "
+            "PR(s) in this release:",
             fg="red",
         ))
         for code_pr, docs_pr in unmerged:
