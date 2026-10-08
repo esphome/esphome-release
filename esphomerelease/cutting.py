@@ -623,7 +623,10 @@ def _append_full_changes_block(content: str, changes: list[_DocsChange]) -> str:
     return content.rstrip("\n") + "\n\n" + _render_full_changes_block(changes)
 
 
-BLOG_FULL_CHANGES_HEADING = "## Full List of Changes"
+# The current template spelling is sentence case; the title-case spelling is
+# for posts created before the template moved to sentence case and must keep
+# working for those cycles' patch releases.
+BLOG_FULL_CHANGES_HEADINGS = ("## Full list of changes", "## Full List of Changes")
 MD013_DISABLE = "{/* markdownlint-disable MD013 */}"
 MD013_ENABLE = "{/* markdownlint-enable MD013 */}"
 
@@ -634,7 +637,8 @@ def _insert_patch_section(
     """Insert a patch release section into the cycle's blog post.
 
     Patch sections sit in a markdownlint-disabled region right before the
-    Full List of Changes heading: the first patch of a cycle creates the
+    Full list of changes heading (either spelling - see
+    ``BLOG_FULL_CHANGES_HEADINGS``): the first patch of a cycle creates the
     region, later patches append inside it (before its closing marker, i.e.
     after the earlier patch sections). Idempotent: a section for ``version``
     that is already on the post is left alone.
@@ -651,13 +655,14 @@ def _insert_patch_section(
     )
     if MD013_ENABLE in content:
         return content.replace(MD013_ENABLE, f"{section}\n\n{MD013_ENABLE}", 1)
-    if BLOG_FULL_CHANGES_HEADING not in content:
+    heading = next((h for h in BLOG_FULL_CHANGES_HEADINGS if h in content), None)
+    if heading is None:
         raise EsphomeReleaseError(
-            f"Cannot find '{BLOG_FULL_CHANGES_HEADING}' in the blog post"
+            f"Cannot find '{BLOG_FULL_CHANGES_HEADINGS[0]}' in the blog post"
         )
     return content.replace(
-        BLOG_FULL_CHANGES_HEADING,
-        f"{MD013_DISABLE}\n\n{section}\n\n{MD013_ENABLE}\n\n{BLOG_FULL_CHANGES_HEADING}",
+        heading,
+        f"{MD013_DISABLE}\n\n{section}\n\n{MD013_ENABLE}\n\n{heading}",
         1,
     )
 
@@ -847,12 +852,15 @@ def _render_blog_post(
 # writes itself (see :func:`_docs_insert_changelog`).
 RELEASE_NOTES_SCRIPT = "script/generate_release_notes.py"
 
-# The prompt files the generator writes, each answered in turn. Missing ones
+# The prompt files the generator writes, answered in this order. Missing ones
 # are skipped: not every cycle has, say, undocumented API changes to describe.
+# The companion summary comes last because it summarises the other prompts'
+# responses for newcomers, so it must stay last.
 RELEASE_NOTES_PROMPTS = (
     "overview_and_highlights.txt",
     "breaking_changes.txt",
     "contributors.txt",
+    "companion_summary.txt",
 )
 
 # The CLI that answers the generated prompts, writing its responses into the
@@ -879,12 +887,14 @@ def _run_docs_command(*args: str) -> bool:
 def _generate_release_notes(version: Version) -> None:
     """Fill the new blog post's narrative sections, tagline and description.
 
-    Runs the three steps documented in the docs repo's
+    Runs the four steps documented in the docs repo's
     ``generate_release_notes.py``: discover the cycle's PRs and write the AI
-    prompts, answer each prompt with the Claude CLI, then assemble the
-    responses into the blog post created just before this. Doing it here means
-    the post is complete - not a skeleton of markers - by the time the cut asks
-    whether it looks correct.
+    prompts, answer the content prompts with the Claude CLI, answer the
+    companion summary prompt (which turns those responses into a short
+    newcomer-friendly summary placed at the top of the post), then assemble
+    everything into the blog post created just before this. Doing it here
+    means the post is complete - not a skeleton of markers - by the time the
+    cut asks whether it looks correct.
 
     Stops at the first failing step, leaving the post's markers and
     placeholders in place for a manual pass.
@@ -965,6 +975,12 @@ def _docs_update_blog_post(
         if "{TAGLINE}" in content or "{DESCRIPTION}" in content:
             gprint(
                 "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually",
+                fg="red",
+            )
+            gprint(
+                "Keep the tagline plain language with no jargon or abbreviations, "
+                'e.g. "Faster builds and encrypted updates", not '
+                '"Faster builds and encrypted OTA"',
                 fg="red",
             )
         review = created

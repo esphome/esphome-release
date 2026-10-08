@@ -260,6 +260,11 @@ def test_update_blog_post_first_beta_creates_post(cutting, docs_git, monkeypatch
     ) in commands
     # Nothing answered the prompts here, so the placeholders are still called out.
     assert "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually" in messages
+    # The tagline hint steers away from jargon and abbreviations.
+    assert any(
+        "no jargon or abbreviations" in msg and "encrypted OTA" in msg
+        for msg in messages
+    )
 
 
 def test_update_blog_post_later_beta_keeps_notice(cutting, monkeypatch):
@@ -478,6 +483,40 @@ def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatc
     )
 
 
+def test_release_notes_prompts_ends_with_companion_summary(cutting):
+    """The companion summary reads the other prompts' responses, so it must
+    be answered last, after overview, breaking changes and contributors."""
+    assert cutting.RELEASE_NOTES_PROMPTS[-1] == "companion_summary.txt"
+    assert cutting.RELEASE_NOTES_PROMPTS[:-1] == (
+        "overview_and_highlights.txt",
+        "breaking_changes.txt",
+        "contributors.txt",
+    )
+
+
+def test_generate_release_notes_skips_only_the_companion_summary(cutting, monkeypatch):
+    """A missing companion summary still lets the earlier prompts run and the
+    post get assembled - it is only the last one that gets skipped."""
+    from esphomerelease.model import Version
+
+    _write_prompts(
+        cutting,
+        ["overview_and_highlights.txt", "breaking_changes.txt", "contributors.txt"],
+    )
+    commands, _, messages = _fake_docs_commands(cutting, monkeypatch)
+
+    cutting._generate_release_notes(Version.parse("2026.7.0b1"))
+
+    assert commands == [
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        _claude_call(cutting, "overview_and_highlights.txt"),
+        _claude_call(cutting, "breaking_changes.txt"),
+        _claude_call(cutting, "contributors.txt"),
+        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+    ]
+    assert "No companion_summary.txt prompt was generated, skipping it" in messages
+
+
 def test_update_blog_post_filled_post_does_not_warn(cutting, monkeypatch):
     """Once the generator has filled the post, the manual hint stays quiet."""
     post = _post_path(cutting)
@@ -492,6 +531,7 @@ def test_update_blog_post_filled_post_does_not_warn(cutting, monkeypatch):
         cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1"
     )
     assert not any("placeholders manually" in msg for msg in messages)
+    assert not any("jargon or abbreviations" in msg for msg in messages)
 
 
 def test_generate_release_notes_survives_a_missing_cli(cutting, monkeypatch):

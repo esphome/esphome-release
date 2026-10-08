@@ -389,6 +389,8 @@ def test_remove_beta_changes_block(cutting):
     assert cutting._remove_beta_changes_block(STABLE_PAGE) == STABLE_PAGE
 
 
+# Legacy spelling: posts created before the blog post template moved to
+# sentence-case headings still carry this title-case heading.
 BLOG_POST_TAIL = (
     "## Full List of Changes\n"
     "\n"
@@ -396,9 +398,21 @@ BLOG_POST_TAIL = (
     "[full 2026.7.0 changelog](/changelog/2026.7.0/).\n"
 )
 
+# Current template spelling.
+BLOG_POST_TAIL_SENTENCE_CASE = (
+    "## Full list of changes\n"
+    "\n"
+    "For the complete list of every merged pull request in this release, see the\n"
+    "[full 2026.7.0 changelog](/changelog/2026.7.0/).\n"
+)
+
 
 def test_insert_patch_section(cutting):
-    """Patch sections land on the blog post in a markdownlint-disabled region."""
+    """Patch sections land on the blog post in a markdownlint-disabled region.
+
+    Legacy coverage: this post still carries the title-case heading used by
+    the template before it moved to sentence case.
+    """
     import datetime
 
     from esphomerelease.model import Version
@@ -445,11 +459,51 @@ def test_insert_patch_section(cutting):
     ) in result2
 
 
+def test_insert_patch_section_sentence_case_heading(cutting):
+    """Patch sections also land on posts using the current sentence-case
+    template heading."""
+    import datetime
+
+    from esphomerelease.model import Version
+
+    content = f"narrative\n\n{BLOG_POST_TAIL_SENTENCE_CASE}"
+    patch_fix = FakePR(30, "Fix crash")
+    result = cutting._insert_patch_section(
+        content,
+        version=Version.parse("2026.7.1"),
+        changes=[_docs_change(cutting, patch_fix)],
+    )
+    now = datetime.datetime.now()
+    assert (
+        f"narrative\n\n{cutting.MD013_DISABLE}\n\n"
+        f"## Release 2026.7.1 - {now:%B} {now.day}\n\n"
+        f"{_line(patch_fix)}\n\n"
+        f"{cutting.MD013_ENABLE}\n\n"
+        "## Full list of changes"
+    ) in result
+
+    # A second patch appends inside the existing region, after the first.
+    patch_fix2 = FakePR(31, "Fix other crash")
+    result2 = cutting._insert_patch_section(
+        result,
+        version=Version.parse("2026.7.2"),
+        changes=[_docs_change(cutting, patch_fix2)],
+    )
+    assert result2.count(cutting.MD013_DISABLE) == 1
+    assert result2.count(cutting.MD013_ENABLE) == 1
+    assert (
+        f"{_line(patch_fix)}\n\n"
+        f"## Release 2026.7.2 - {now:%B} {now.day}\n\n"
+        f"{_line(patch_fix2)}\n\n"
+        f"{cutting.MD013_ENABLE}"
+    ) in result2
+
+
 def test_insert_patch_section_missing_heading_raises(cutting):
     from esphomerelease.exceptions import EsphomeReleaseError
     from esphomerelease.model import Version
 
-    with pytest.raises(EsphomeReleaseError, match="Full List of Changes"):
+    with pytest.raises(EsphomeReleaseError, match="Full list of changes"):
         cutting._insert_patch_section(
             "no anchors here\n",
             version=Version.parse("2026.7.1"),
