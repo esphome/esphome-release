@@ -272,7 +272,56 @@ def _strategy_merge_then_cherry_pick(
     return ret
 
 
+# The docs repo's CI lint job, step for step (.github/workflows/ci.yml). Run
+# before anything is pushed so a cut never opens a docs PR that fails CI.
+DOCS_LINT_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("npx", "markdownlint", "--config", ".markdownlintrc", "."),
+    ("npm", "run", "format:check"),
+    ("npm", "run", "lint:js"),
+    ("npm", "run", "lint"),
+    ("npm", "run", "check:images"),
+)
+
+
+def _docs_lint_failures() -> list[str]:
+    """Run every docs lint step, returning the ones that failed.
+
+    All steps run even after a failure, so one pass shows every problem
+    instead of CI's one-step-at-a-time view.
+    """
+    failed: list[str] = []
+    for command in DOCS_LINT_COMMANDS:
+        try:
+            EsphomeDocsProject.run_command(*command, live=True)
+        except EsphomeReleaseError:
+            failed.append(" ".join(command))
+    return failed
+
+
+def _lint_docs(version: Version) -> None:
+    """Gate the cut on the docs repo's CI lint passing on the bump branch.
+
+    On failure the user fixes the reported problems in the docs checkout and
+    the fixes are committed before lint re-runs; declining to retry aborts the
+    cut before anything is pushed.
+    """
+    branch_name = _bump_branch_name(version)
+    with EsphomeDocsProject.workon(branch_name):
+        gprint("Linting the docs repo")
+        EsphomeDocsProject.run_command("npm", "ci", live=True)
+        while failed := _docs_lint_failures():
+            gprint(f"Docs lint failed: {', '.join(failed)}", fg="red")
+            if not click.confirm(
+                f"Fix the problems in {EsphomeDocsProject.path} and re-run the docs lint?",
+                default=True,
+            ):
+                raise EsphomeReleaseError("Docs lint failed, not creating the PRs")
+            EsphomeDocsProject.commit(f"Fix docs lint for {version}", ignore_empty=True)
+        gprint("Docs lint passed")
+
+
 def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
+    _lint_docs(version)
     branch_name = _bump_branch_name(version)
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
