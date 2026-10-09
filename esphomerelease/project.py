@@ -279,8 +279,9 @@ class Project:
             scanned += 1
             if pull.number in known:
                 continue
+            # github3 leaves a pull's milestone as the raw JSON dict.
             pull_milestone = pull.milestone
-            if pull_milestone is None or pull_milestone.number != milestone.number:
+            if pull_milestone is None or pull_milestone["number"] != milestone.number:
                 continue
             # pull_requests() only yields PRs, so this number is always a PR.
             found.append(self.repo.issue(pull.number))

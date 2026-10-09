@@ -123,10 +123,9 @@ class FakeShortPull:
 
     def __init__(self, number: int, milestone_number: Optional[int] = None):
         self.number = number
+        # github3's ShortPullRequest leaves milestone as the raw JSON dict.
         self.milestone = (
-            types.SimpleNamespace(number=milestone_number)
-            if milestone_number is not None
-            else None
+            {"number": milestone_number} if milestone_number is not None else None
         )
 
 
