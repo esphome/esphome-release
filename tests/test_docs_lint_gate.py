@@ -13,19 +13,29 @@ from esphomerelease.exceptions import EsphomeReleaseError
 from esphomerelease.model import Version
 
 VERSION = Version.parse("2026.10.0b1")
+LS_IGNORED = (
+    "git",
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+)
 
 
 @pytest.fixture
 def docs(cutting, monkeypatch):
     """Record docs project commands, checkouts and commits instead of running them."""
     proj = cutting.EsphomeDocsProject
-    calls = {"run": [], "checkout": [], "commit": [], "fail": set()}
+    calls = {"run": [], "checkout": [], "commit": [], "fail": set(), "ignored": b""}
 
     def run_command(*args, **kwargs):
         calls["run"].append(args)
         if args in calls["fail"]:
             calls["fail"].discard(args)
             raise EsphomeReleaseError("Failed running command!")
+        if args == LS_IGNORED:
+            return calls["ignored"]
         return b""
 
     monkeypatch.setattr(proj, "run_command", run_command)
@@ -44,8 +54,63 @@ def test_lint_passes_runs_every_ci_step_on_bump_branch(cutting, docs, monkeypatc
     cutting._lint_docs(VERSION)
 
     assert docs["checkout"] == ["bump-2026.10.0b1"]
-    assert docs["run"] == [("npm", "ci"), *cutting.DOCS_LINT_COMMANDS]
+    assert docs["run"] == [("npm", "ci"), LS_IGNORED, *cutting.DOCS_LINT_COMMANDS]
     assert docs["commit"] == []
+
+
+def test_lint_skips_gitignored_paths(cutting, docs, monkeypatch, capsys):
+    """markdownlint and eslint walk the filesystem, so local-only content
+    (caches, Claude worktrees, venvs) is passed to them as ignores; contents
+    git lists under an already ignored directory collapse into it."""
+    docs["ignored"] = (
+        b".claude/worktrees/\n"
+        b".pytest_cache/\n"
+        b".pytest_cache/README.md\n"
+        b"script/cache/\n"
+        b"src/data/allowed-referrers.json\n"
+    )
+    ignored = [
+        ".claude/worktrees/",
+        ".pytest_cache/",
+        "script/cache/",
+        "src/data/allowed-referrers.json",
+    ]
+    markdownlint = (
+        "npx",
+        "markdownlint",
+        "--config",
+        ".markdownlintrc",
+        *(arg for path in ignored for arg in ("--ignore", path)),
+        ".",
+    )
+    lint_js = (
+        "npm",
+        "run",
+        "lint:js",
+        "--",
+        *(arg for path in ignored for arg in ("--ignore-pattern", path)),
+    )
+    docs["fail"] = {markdownlint, lint_js}
+    monkeypatch.setattr(cutting.click, "confirm", lambda *a, **k: False)
+
+    with pytest.raises(EsphomeReleaseError, match="Docs lint failed"):
+        cutting._lint_docs(VERSION)
+
+    _, format_check, _, lint, images = cutting.DOCS_LINT_COMMANDS
+    assert docs["run"] == [
+        ("npm", "ci"),
+        LS_IGNORED,
+        markdownlint,
+        format_check,
+        lint_js,
+        lint,
+        images,
+    ]
+    # Failures are reported by the base command, not the ignore-laden one.
+    assert (
+        "Docs lint failed: npx markdownlint --config .markdownlintrc ., "
+        "npm run lint:js"
+    ) in capsys.readouterr().out
 
 
 def test_lint_failure_reports_all_steps_then_commits_fixes(
@@ -63,7 +128,9 @@ def test_lint_failure_reports_all_steps_then_commits_fixes(
     # Both failing steps ran in the first pass, then the whole lint re-ran.
     assert docs["run"] == [
         ("npm", "ci"),
+        LS_IGNORED,
         *cutting.DOCS_LINT_COMMANDS,
+        LS_IGNORED,
         *cutting.DOCS_LINT_COMMANDS,
     ]
     assert "Docs lint failed: npm run lint, npm run check:images" in (

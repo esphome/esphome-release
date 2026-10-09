@@ -274,6 +274,10 @@ def _strategy_merge_then_cherry_pick(
 
 # The docs repo's CI lint job, step for step (.github/workflows/ci.yml). Run
 # before anything is pushed so a cut never opens a docs PR that fails CI.
+# markdownlint and eslint walk the filesystem rather than git, so each gets the
+# gitignored paths appended (see _docs_lint_commands) to skip local-only content
+# CI's clean checkout never has: the companion-summary cache, Claude worktrees,
+# venvs and build output.
 DOCS_LINT_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("npx", "markdownlint", "--config", ".markdownlintrc", "."),
     ("npm", "run", "format:check"),
@@ -283,18 +287,56 @@ DOCS_LINT_COMMANDS: tuple[tuple[str, ...], ...] = (
 )
 
 
+def _docs_ignored_paths() -> list[str]:
+    """Return the docs checkout's gitignored paths, outermost directories only.
+
+    ``--directory`` collapses a fully ignored directory to one entry, but git
+    still lists the contents of one holding its own ``.gitignore`` (e.g.
+    ``.pytest_cache/``), so entries under an already listed directory are
+    dropped.
+    """
+    out = EsphomeDocsProject.run_git(
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        silent=True,
+    )
+    paths: list[str] = []
+    for path in out.decode().splitlines():
+        if not any(path != p and path.startswith(p) for p in paths if p.endswith("/")):
+            paths.append(path)
+    return paths
+
+
+def _docs_lint_commands() -> list[tuple[str, ...]]:
+    """Build :data:`DOCS_LINT_COMMANDS` with the gitignored paths excluded."""
+    ignored = _docs_ignored_paths()
+    markdownlint, format_check, lint_js, *rest = DOCS_LINT_COMMANDS
+    md_ignores = tuple(arg for path in ignored for arg in ("--ignore", path))
+    js_ignores = tuple(arg for path in ignored for arg in ("--ignore-pattern", path))
+    return [
+        (*markdownlint[:-1], *md_ignores, markdownlint[-1]),
+        format_check,
+        (*lint_js, "--", *js_ignores) if js_ignores else lint_js,
+        *rest,
+    ]
+
+
 def _docs_lint_failures() -> list[str]:
     """Run every docs lint step, returning the ones that failed.
 
     All steps run even after a failure, so one pass shows every problem
-    instead of CI's one-step-at-a-time view.
+    instead of CI's one-step-at-a-time view. Failures are reported by the
+    step's base command, without the appended ignore arguments.
     """
     failed: list[str] = []
-    for command in DOCS_LINT_COMMANDS:
+    for base, command in zip(DOCS_LINT_COMMANDS, _docs_lint_commands()):
         try:
             EsphomeDocsProject.run_command(*command, live=True)
         except EsphomeReleaseError:
-            failed.append(" ".join(command))
+            failed.append(" ".join(base))
     return failed
 
 
