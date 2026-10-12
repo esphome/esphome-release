@@ -1,5 +1,5 @@
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 
 import github3.session
 from github3 import GitHub
@@ -7,16 +7,12 @@ from github3 import GitHub
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
 
-
 GITHUB_SESSION = None
 GITHUB_TOKEN: str | None = None
 
 # The gh OAuth token needs the `repo` scope to create releases and pull
 # requests. Without it the API answers 403 instead of anything descriptive.
-SCOPE_HINT = (
-    "Make sure the token carries the `repo` scope, adding it with "
-    "`gh auth refresh -s repo` if needed."
-)
+SCOPE_HINT = "Make sure the token carries the `repo` scope, adding it with `gh auth refresh -s repo` if needed."
 
 
 def _token_from_gh_cli() -> str:
@@ -42,15 +38,13 @@ def _token_from_gh_cli() -> str:
         detail = proc.stderr.strip() or proc.stdout.strip()
         suffix = f" ({detail})" if detail else ""
         raise EsphomeReleaseError(
-            f"`gh auth token` failed{suffix}. Run `gh auth login` to "
-            f"authenticate the GitHub CLI. {SCOPE_HINT}"
+            f"`gh auth token` failed{suffix}. Run `gh auth login` to authenticate the GitHub CLI. {SCOPE_HINT}"
         )
 
     token = proc.stdout.strip()
     if not token:
         raise EsphomeReleaseError(
-            "`gh auth token` returned an empty token. Run `gh auth login` to "
-            f"authenticate the GitHub CLI. {SCOPE_HINT}"
+            f"`gh auth token` returned an empty token. Run `gh auth login` to authenticate the GitHub CLI. {SCOPE_HINT}"
         )
     return token
 
@@ -92,8 +86,8 @@ def get_session() -> GitHub:
     rate_limit = gh.rate_limit()["rate"]
     limit = rate_limit["limit"]
     remaining = rate_limit["remaining"]
-    reset = datetime.utcfromtimestamp(rate_limit["reset"])
+    reset = datetime.fromtimestamp(rate_limit["reset"], tz=UTC)
     print(f"{remaining}/{limit} rate limit remaining")
-    print(f"Reset at {reset} UTC (in {reset - datetime.utcnow()})")
+    print(f"Reset at {reset} UTC (in {reset - datetime.now(UTC)})")
     GITHUB_SESSION = gh
     return GITHUB_SESSION

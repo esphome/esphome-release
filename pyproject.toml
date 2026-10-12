@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esphomerelease"
+version = "1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "github3.py==3.2.0",
+  "click==8.0.4",
+  "requests==2.34.2",
+  "PyYAML==6.0.3",
+  "pexpect==4.9.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.2",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.17.0",
+  "ty>=0.0.86",
+]
+
+[project.scripts]
+esphomerelease = "esphomerelease.__main__:main"
+
+[tool.setuptools]
+packages = ["esphomerelease"]
+
+[tool.setuptools.package-data]
+esphomerelease = ["esphome-logo.png"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "FURB", "ISC", "PERF", "PIE", "PL", "PT", "PTH", "RET", "RUF", "SIM"]
+ignore = [
+  "PLC0415", # import-outside-top-level: lazy imports keep `project` config loading off the import path
+  "PLR0911", # too-many-return-statements
+  "PLR0912", # too-many-branches
+  "PLR0913", # too-many-arguments
+  "PLR0915", # too-many-statements
+  "PLR0917", # too-many-positional-arguments
+  "PLR2004", # magic-value-comparison
+  "PLW0603", # global-statement
+  "PLW1510", # subprocess-run-without-check: callers inspect returncode themselves
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["esphomerelease"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["esphomerelease", "check_docs_prs"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

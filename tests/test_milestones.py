@@ -89,7 +89,7 @@ def test_ensure_milestone_returns_existing_without_creating(cutting, monkeypatch
 
     existing = FakeMilestone(
         "2026.8.0",
-        due_on=datetime.datetime(2026, 8, 10, 7, tzinfo=datetime.timezone.utc),
+        due_on=datetime.datetime(2026, 8, 10, 7, tzinfo=datetime.UTC),
     )
     proj = _project_with_existing(cutting, monkeypatch, existing)
 
@@ -103,7 +103,7 @@ def test_ensure_milestone_without_due_leaves_existing_alone(cutting, monkeypatch
 
     existing = FakeMilestone(
         "2026.7.1",
-        due_on=datetime.datetime(2026, 7, 20, 7, tzinfo=datetime.timezone.utc),
+        due_on=datetime.datetime(2026, 7, 20, 7, tzinfo=datetime.UTC),
     )
     proj = _project_with_existing(cutting, monkeypatch, existing)
 
@@ -116,7 +116,7 @@ def test_ensure_milestone_corrects_wrong_due_date(cutting, monkeypatch):
 
     existing = FakeMilestone(
         "2026.8.0",
-        due_on=datetime.datetime(2026, 8, 3, 7, tzinfo=datetime.timezone.utc),
+        due_on=datetime.datetime(2026, 8, 3, 7, tzinfo=datetime.UTC),
     )
     proj = _project_with_existing(cutting, monkeypatch, existing)
 
@@ -204,9 +204,7 @@ def test_close_cycle_milestone_first_release(cutting, monkeypatch):
 
     calls = _record_ensure(cutting, monkeypatch)
     opened = []
-    monkeypatch.setattr(
-        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
-    )
+    monkeypatch.setattr(cutting, "_open_next_cycle_milestone", opened.append)
 
     old_milestones = {}
     for proj in _all_projects(cutting):
@@ -234,9 +232,7 @@ def test_close_cycle_milestone_patch_release(cutting, monkeypatch):
 
     calls = _record_ensure(cutting, monkeypatch)
     opened = []
-    monkeypatch.setattr(
-        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
-    )
+    monkeypatch.setattr(cutting, "_open_next_cycle_milestone", opened.append)
     for proj in _all_projects(cutting):
         monkeypatch.setattr(proj, "get_milestone_by_title", lambda title: None)
 

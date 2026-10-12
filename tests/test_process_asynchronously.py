@@ -20,7 +20,7 @@ import pytest
 def util(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.json").write_text("{}")
-    import esphomerelease.config as config
+    from esphomerelease import config
 
     importlib.reload(config)
     import esphomerelease.util as util_mod

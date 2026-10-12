@@ -1,5 +1,6 @@
 """Watch CI on the release PRs after a cut and notify when attention is needed."""
 
+import contextlib
 import enum
 import select
 import shutil
@@ -67,10 +68,7 @@ def notify(title: str, message: str, *, urgent: bool = False) -> None:
 
     cmd: list[str]
     if sys.platform == "darwin":
-        script = (
-            f'display notification "{_osascript_quote(message)}" '
-            f'with title "{_osascript_quote(title)}"'
-        )
+        script = f'display notification "{_osascript_quote(message)}" with title "{_osascript_quote(title)}"'
         cmd = ["osascript", "-e", script]
     elif sys.platform.startswith("linux"):
         cmd = [
@@ -86,11 +84,9 @@ def notify(title: str, message: str, *, urgent: bool = False) -> None:
 
     if shutil.which(cmd[0]) is None:
         return
-    try:
+    # A missing notification daemon must never break the watch.
+    with contextlib.suppress(subprocess.SubprocessError, OSError):
         subprocess.run(cmd, check=True, capture_output=True, timeout=NOTIFY_TIMEOUT)
-    except (subprocess.SubprocessError, OSError):
-        # A missing notification daemon must never break the watch.
-        pass
 
 
 def build_query(prs: list[WatchedPr]) -> str:
@@ -130,12 +126,10 @@ def _rollup_state(rollup: dict[str, Any] | None) -> CiState:
 def _failing_checks(rollup: dict[str, Any]) -> list[str]:
     failing = []
     for node in rollup["contexts"]["nodes"]:
-        if node["__typename"] == "CheckRun":
-            if node["conclusion"] in FAILING_CONCLUSIONS:
-                failing.append(node["name"])
-        elif node["__typename"] == "StatusContext":
-            if node["state"] in FAILING_CONTEXT_STATES:
-                failing.append(node["context"])
+        if node["__typename"] == "CheckRun" and node["conclusion"] in FAILING_CONCLUSIONS:
+            failing.append(node["name"])
+        elif node["__typename"] == "StatusContext" and node["state"] in FAILING_CONTEXT_STATES:
+            failing.append(node["context"])
     return failing
 
 
@@ -148,9 +142,7 @@ def fetch_statuses(prs: list[WatchedPr]) -> list[PrStatus]:
         timeout=GRAPHQL_TIMEOUT,
     )
     if resp.status_code != 200:
-        raise EsphomeReleaseError(
-            f"GitHub GraphQL request failed: HTTP {resp.status_code}"
-        )
+        raise EsphomeReleaseError(f"GitHub GraphQL request failed: HTTP {resp.status_code}")
     payload = resp.json()
     if payload.get("errors"):
         raise EsphomeReleaseError(f"GitHub GraphQL errors: {payload['errors']}")
@@ -159,13 +151,14 @@ def fetch_statuses(prs: list[WatchedPr]) -> list[PrStatus]:
     for idx, pr in enumerate(prs):
         pr_data = payload["data"][f"pr{idx}"]["pullRequest"]
         if pr_data is None:
-            raise EsphomeReleaseError(
-                f"[{pr.project.shortname}] PR #{pr.number} not found"
-            )
+            raise EsphomeReleaseError(f"[{pr.project.shortname}] PR #{pr.number} not found")
         nodes = pr_data["commits"]["nodes"]
         rollup = nodes[0]["commit"]["statusCheckRollup"] if nodes else None
         state = _rollup_state(rollup)
-        failing = _failing_checks(rollup) if state is CiState.FAILURE else []
+        failing: list[str] = []
+        if state is CiState.FAILURE:
+            assert rollup is not None  # a missing rollup is PENDING
+            failing = _failing_checks(rollup)
         statuses.append(PrStatus(pr=pr, state=state, failing=failing))
     return statuses
 
@@ -183,19 +176,14 @@ def find_release_prs(version: Version) -> list[WatchedPr]:
     base = Branch.BETA if version.beta else Branch.STABLE
     found = []
     for proj in (EsphomeProject, EsphomeDocsProject):
-        matches = proj.get_pr_by_title(
-            title=str(version), head=_bump_branch_name(version), base=base
-        )
+        matches = proj.get_pr_by_title(title=str(version), head=_bump_branch_name(version), base=base)
         if len(matches) != 1:
             gprint(
-                f"[{proj.shortname}] expected one release PR for {version}, "
-                f"found {len(matches)}; not watching it",
+                f"[{proj.shortname}] expected one release PR for {version}, found {len(matches)}; not watching it",
                 fg="yellow",
             )
             continue
-        found.append(
-            WatchedPr(project=proj, number=matches[0].number, url=matches[0].html_url)
-        )
+        found.append(WatchedPr(project=proj, number=matches[0].number, url=matches[0].html_url))
     return found
 
 
@@ -216,9 +204,7 @@ def _describe(statuses: list[PrStatus]) -> str:
     )
 
 
-def _watch_loop(
-    prs: list[WatchedPr], poll_seconds: float, notify_seconds: float
-) -> None:
+def _watch_loop(prs: list[WatchedPr], poll_seconds: float, notify_seconds: float) -> None:
     """Poll until CI is green and the user presses Enter."""
     state = CiState.PENDING
     announced: CiState | None = None
@@ -296,10 +282,6 @@ def watch_release_ci(
 
     projects: list[Project] = [EsphomeProject, EsphomeDocsProject]
     if version.beta:
-        cutting.publish_beta_release(
-            version, projects=projects, base=base, confirmed=True
-        )
+        cutting.publish_beta_release(version, projects=projects, base=base, confirmed=True)
     else:
-        cutting.publish_release(
-            version, projects=projects, base=base, confirmed=True
-        )
+        cutting.publish_release(version, projects=projects, base=base, confirmed=True)

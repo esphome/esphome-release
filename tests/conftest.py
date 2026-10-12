@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Trimmed stand-in for the docs repo's script/blog_post_template.mdx: the
 # real file carries more frontmatter and marker sections, but the cutter only
 # fills {TOKEN}s and inserts featured rows after the ImgTable opening line.
@@ -119,9 +118,7 @@ def docs_git(cutting):
     repo = Path(cutting.EsphomeDocsProject.path)
     index = repo / Path(cutting.COMPONENTS_INDEX)
     index.parent.mkdir(parents=True, exist_ok=True)
-    (repo / "src" / "content" / "docs" / "changelog").mkdir(
-        parents=True, exist_ok=True
-    )
+    (repo / "src" / "content" / "docs" / "changelog").mkdir(parents=True, exist_ok=True)
 
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.email", "test@example.com")

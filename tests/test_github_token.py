@@ -10,6 +10,7 @@ themselves run for real, including every failure path.
 """
 
 import subprocess
+from typing import ClassVar
 
 import pytest
 
@@ -85,9 +86,7 @@ def test_gh_not_installed(gh_calls):
 def test_gh_not_authenticated(gh_calls):
     """A non-zero exit surfaces gh's own stderr alongside the fix."""
     _, results = gh_calls
-    results.append(
-        FakeCompletedProcess(returncode=1, stderr="not logged into any hosts\n")
-    )
+    results.append(FakeCompletedProcess(returncode=1, stderr="not logged into any hosts\n"))
 
     with pytest.raises(EsphomeReleaseError) as err:
         github_mod.get_token()
@@ -163,7 +162,7 @@ def test_missing_config_token_does_not_keyerror(gh_calls):
 class FakeGitHub:
     """Stand-in for github3.GitHub recording the token it was built with."""
 
-    instances = []
+    instances: ClassVar[list] = []
 
     def __init__(self, token=None, session=None):
         self.token = token

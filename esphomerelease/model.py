@@ -1,7 +1,6 @@
-import re
 import enum
+import re
 from dataclasses import dataclass, replace
-from typing import Union
 
 
 class Branch(enum.Enum):
@@ -10,7 +9,7 @@ class Branch(enum.Enum):
     DEV = "dev"
 
 
-BranchType = Union[str, Branch]
+BranchType = str | Branch
 
 
 @dataclass(eq=True, frozen=True)

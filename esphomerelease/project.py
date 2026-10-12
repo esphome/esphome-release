@@ -5,7 +5,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
 
 import click
 import pexpect
@@ -21,7 +20,7 @@ from .model import Branch, BranchType, Version
 from .util import confirm, execute_command, gprint, process_asynchronously
 
 
-def _issue_pr_merged_at(issue: Issue) -> Optional[str]:
+def _issue_pr_merged_at(issue: Issue) -> str | None:
     """Merge timestamp of the PR behind an issue, from the issue payload.
 
     The issues listing embeds a ``pull_request`` block (with ``merged_at``)
@@ -59,30 +58,30 @@ class Project:
         *,
         path: str,
         shortname: str,
-        repo_name: Optional[str] = None,
-        stable_branch: Optional[str] = None,
-        beta_branch: Optional[str] = None,
-        dev_branch: Optional[str] = None,
+        repo_name: str | None = None,
+        stable_branch: str | None = None,
+        beta_branch: str | None = None,
+        dev_branch: str | None = None,
     ):
         # The name on the remote
-        self._repo_name: str = repo_name
+        self._repo_name: str | None = repo_name
         self.shortname: str = shortname
-        self._repo: Optional[Repository] = None
+        self._repo: Repository | None = None
 
         # A cache or
-        self.pr_cache: Dict[int, PullRequest] = {}
+        self.pr_cache: dict[int, PullRequest] = {}
 
         # The current branch so we don't have to go through git
-        self.branch: Optional[str] = None
+        self.branch: str | None = None
 
         # Path of the repo
         self.path: Path = Path(path)
         assert self.path.is_dir(), f"Project dir {self.path} does not exist"
 
         # The branch we have frozen on with .workon()
-        self._freeze_branch: Optional[str] = None
+        self._freeze_branch: str | None = None
 
-        self._branch_lookup: Dict[Branch, str] = {}
+        self._branch_lookup: dict[Branch, str] = {}
         if stable_branch is not None:
             self._branch_lookup[Branch.STABLE] = stable_branch
         if beta_branch is not None:
@@ -91,10 +90,10 @@ class Project:
             self._branch_lookup[Branch.DEV] = dev_branch
 
     @property
-    def name(self) -> str:
+    def name(self) -> str | None:
         return self._repo_name
 
-    def lookup_branch(self, branch: Union[str, Branch]) -> str:
+    def lookup_branch(self, branch: str | Branch) -> str:
         if isinstance(branch, Branch):
             return self._branch_lookup[branch]
         return branch
@@ -115,7 +114,7 @@ class Project:
             self.pr_cache[pr] = self.repo.pull_request(pr)
         return self.pr_cache[pr]
 
-    def get_prs(self, numbers: List[int]) -> List[PullRequest]:
+    def get_prs(self, numbers: list[int]) -> list[PullRequest]:
         """Get multiple PRs by number, fetching uncached ones in parallel."""
         missing = list(dict.fromkeys(n for n in numbers if n not in self.pr_cache))
         if missing:
@@ -124,24 +123,20 @@ class Project:
                 self.pr_cache[pull.number] = pull
         return [self.pr_cache[n] for n in numbers]
 
-    def _milestone_pr_issues(self, milestone: Milestone, state: str) -> List[Issue]:
+    def _milestone_pr_issues(self, milestone: Milestone, state: str) -> list[Issue]:
         """List the issues on a milestone that are pull requests.
 
         Judged from the listing payload alone — no per-issue API requests.
         """
-        return [
-            issue
-            for issue in self.repo.issues(milestone=milestone.number, state=state)
-            if _issue_is_pr(issue)
-        ]
+        return [issue for issue in self.repo.issues(milestone=milestone.number, state=state) if _issue_is_pr(issue)]
 
     def get_pr_by_title(
         self,
         *,
         title: str,
-        head: Optional[BranchType] = None,
-        base: Optional[BranchType] = None,
-    ) -> List[PullRequest]:
+        head: BranchType | None = None,
+        base: BranchType | None = None,
+    ) -> list[PullRequest]:
         if head is not None:
             head = self.lookup_branch(head)
         if base is not None:
@@ -154,7 +149,7 @@ class Project:
                 res.append(pr)
         return res
 
-    def get_milestone_by_title(self, title: str) -> Optional[Milestone]:
+    def get_milestone_by_title(self, title: str) -> Milestone | None:
         """Get a milestone by title."""
         seen = []
         for ms in self.repo.milestones(state="open"):
@@ -165,18 +160,14 @@ class Project:
 
         return None
 
-    def get_open_milestones(self) -> List[Milestone]:
+    def get_open_milestones(self) -> list[Milestone]:
         """Get all open milestones."""
         return list(self.repo.milestones(state="open"))
 
-    def create_milestone(
-        self, title: str, *, due_on: Optional[str] = None
-    ) -> Milestone:
+    def create_milestone(self, title: str, *, due_on: str | None = None) -> Milestone:
         return self.repo.create_milestone(title, due_on=due_on)
 
-    def ensure_milestone(
-        self, title: str, *, due_on: Optional[str] = None
-    ) -> Milestone:
+    def ensure_milestone(self, title: str, *, due_on: str | None = None) -> Milestone:
         """Get the open milestone with ``title``, creating it if missing.
 
         GitHub rejects duplicate milestone titles with a 422, so a milestone
@@ -191,16 +182,12 @@ class Project:
             # GitHub normalizes due_on to midnight US/Pacific, so the returned
             # timestamp never matches the one sent; compare calendar days only.
             wanted_day = due_on.split("T", 1)[0]
-            actual_day = (
-                milestone.due_on.date().isoformat()
-                if milestone.due_on is not None
-                else None
-            )
+            actual_day = milestone.due_on.date().isoformat() if milestone.due_on is not None else None
             if actual_day != wanted_day:
                 milestone.update(due_on=due_on)
         return milestone
 
-    def get_open_prs_for_milestone(self, milestone: Milestone) -> List[PullRequest]:
+    def get_open_prs_for_milestone(self, milestone: Milestone) -> list[PullRequest]:
         """Get all open PRs assigned to a milestone."""
         if milestone is None:
             return []
@@ -208,9 +195,7 @@ class Project:
         issues = self._milestone_pr_issues(milestone, "open")
         return self.get_prs([issue.number for issue in issues])
 
-    def move_open_prs_to_milestone(
-        self, milestone: Milestone, target_title: str
-    ) -> List[Issue]:
+    def move_open_prs_to_milestone(self, milestone: Milestone | None, target_title: str) -> list[Issue]:
         """Move every open PR on ``milestone`` onto the ``target_title`` milestone.
 
         Used when a cut goes ahead with PRs still open on the milestone it is
@@ -230,9 +215,7 @@ class Project:
             issue.edit(milestone=target.number)
         return issues
 
-    def get_next_beta_prs_for_milestone(
-        self, milestone: Milestone
-    ) -> List[PullRequest]:
+    def get_next_beta_prs_for_milestone(self, milestone: Milestone) -> list[PullRequest]:
         """Get merged PRs in a milestone that haven't been cherry-picked yet.
 
         These are the PRs :meth:`cherry_pick_from_milestone` would pick at the
@@ -244,14 +227,11 @@ class Project:
         numbers = [
             issue.number
             for issue in self._milestone_pr_issues(milestone, "closed")
-            if _issue_pr_merged_at(issue) is not None
-            and not _issue_is_cherry_picked(issue)
+            if _issue_pr_merged_at(issue) is not None and not _issue_is_cherry_picked(issue)
         ]
         return sorted(self.get_prs(numbers), key=lambda pr: pr.merged_at)
 
-    def _find_drifted_milestone_prs(
-        self, milestone: Milestone, known: set
-    ) -> List[Issue]:
+    def _find_drifted_milestone_prs(self, milestone: Milestone, known: set) -> list[Issue]:
         """Identify milestone PRs GitHub's issues index silently dropped.
 
         ``repo.issues(milestone=...)`` — and the search API — can omit PRs whose
@@ -269,11 +249,9 @@ class Project:
         if missing <= 0:
             return []
 
-        found: List[Issue] = []
+        found: list[Issue] = []
         scanned = 0
-        for pull in self.repo.pull_requests(
-            state="closed", sort="updated", direction="desc"
-        ):
+        for pull in self.repo.pull_requests(state="closed", sort="updated", direction="desc"):
             if len(found) >= missing or scanned >= self.MILESTONE_SCAN_LIMIT:
                 break
             scanned += 1
@@ -287,7 +265,7 @@ class Project:
             found.append(self.repo.issue(pull.number))
         return found
 
-    def _resolve_milestone_index_drift(self, milestone: Milestone) -> List[Issue]:
+    def _resolve_milestone_index_drift(self, milestone: Milestone) -> list[Issue]:
         """Hand milestone PRs the index dropped to the user to cherry-pick.
 
         On a shortfall (see :meth:`_find_drifted_milestone_prs`), print the
@@ -299,10 +277,7 @@ class Project:
         """
         # Count all closed issues the index returned (PRs and plain issues) so a
         # plain issue on the milestone isn't mistaken for a dropped PR.
-        known = {
-            issue.number
-            for issue in self.repo.issues(milestone=milestone.number, state="closed")
-        }
+        known = {issue.number for issue in self.repo.issues(milestone=milestone.number, state="closed")}
         missing = milestone.closed_issues - len(known)
         if missing <= 0:
             return []
@@ -311,18 +286,18 @@ class Project:
         pulls = self.get_prs([issue.number for issue in drifted])
         indexed = milestone.closed_issues - missing
         lines = [
-            f"Milestone '{milestone.title}' reports {milestone.closed_issues} "
-            f"closed PR(s) but GitHub's milestone index only listed {indexed}.",
-            f"{missing} PR(s) are missing from the cut due to milestone index "
-            "drift (the PRs carry the milestone but the index dropped them).",
+            (
+                f"Milestone '{milestone.title}' reports {milestone.closed_issues} "
+                f"closed PR(s) but GitHub's milestone index only listed {indexed}."
+            ),
+            (
+                f"{missing} PR(s) are missing from the cut due to milestone index "
+                "drift (the PRs carry the milestone but the index dropped them)."
+            ),
             "",
             "Cherry-pick the missing PR(s) into this branch:",
         ]
-        for pull in pulls:
-            lines.append(
-                f"    git cherry-pick {pull.merge_commit_sha}"
-                f"    # #{pull.number} {pull.title}"
-            )
+        lines.extend(f"    git cherry-pick {pull.merge_commit_sha}    # #{pull.number} {pull.title}" for pull in pulls)
         if len(drifted) < missing:
             lines.append("")
             lines.append(
@@ -339,7 +314,7 @@ class Project:
         self._spawn_subshell(run="git log --oneline -15", print_lines=lines)
         return drifted
 
-    def cherry_pick_from_milestone(self, milestone: Milestone) -> List[Issue]:
+    def cherry_pick_from_milestone(self, milestone: Milestone | None) -> list[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
 
         Returns a list of the found PRs (as Issue objects)
@@ -348,7 +323,7 @@ class Project:
             return []
 
         listed = self._milestone_pr_issues(milestone, "closed")
-        pick_issues: List[Issue] = []
+        pick_issues: list[Issue] = []
 
         for issue in listed:
             # Merged state and labels come from the issue listing payload;
@@ -356,8 +331,7 @@ class Project:
             # parallel, for their merge_commit_sha) below.
             if _issue_pr_merged_at(issue) is None:
                 log = click.style(
-                    f"Not merged yet: {issue.title}\nIf you want to add it please merge "
-                    f"it manually then confirm.",
+                    f"Not merged yet: {issue.title}\nIf you want to add it please merge it manually then confirm.",
                     fg="yellow",
                 )
                 while not click.confirm(log):
@@ -372,12 +346,12 @@ class Project:
             pick_issues.append(issue)
 
         pulls = self.get_prs([issue.number for issue in pick_issues])
-        to_pick = sorted(zip(pulls, pick_issues), key=lambda obj: obj[0].merged_at)
+        to_pick = sorted(zip(pulls, pick_issues, strict=True), key=lambda obj: obj[0].merged_at)
 
         for pull, _ in to_pick:
             gprint(f"Cherry picking {pull.title}: {pull.merge_commit_sha}")
 
-        for pull, issue in to_pick:
+        for pull, _ in to_pick:
             self.cherry_pick(pull.merge_commit_sha)
 
         picked = [x[1] for x in to_pick]
@@ -386,12 +360,12 @@ class Project:
         drifted = self._resolve_milestone_index_drift(milestone)
         return picked + drifted
 
-    def mark_pulls_cherry_picked(self, to_pick: List[Issue]):
+    def mark_pulls_cherry_picked(self, to_pick: list[Issue]):
         """Mark all PRs cherry-picked by adding a label."""
         for issue in to_pick:
             issue.add_labels("cherry-picked")
 
-    def remove_merged_prs_from_milestone(self, milestone: Milestone) -> List[Issue]:
+    def remove_merged_prs_from_milestone(self, milestone: Milestone | None) -> list[Issue]:
         """Remove already-merged PRs from a milestone.
 
         Used at the first beta cut: those PRs are brought into the release by the
@@ -420,10 +394,8 @@ class Project:
             return Version.parse(self.repo.latest_release().tag_name)
         found_versions = []
         for release in self.repo.releases(number=self.RECENT_RELEASES_TO_CHECK):
-            try:
+            with contextlib.suppress(ValueError):
                 found_versions.append(Version.parse(release.tag_name))
-            except ValueError:
-                pass
         return max(found_versions)
 
     # The release PR of a cut is always among the newest PRs against the beta
@@ -431,7 +403,7 @@ class Project:
     # branch is enough.
     RECENT_RELEASE_PRS_TO_CHECK = 10
 
-    def pending_release_versions(self) -> List[Version]:
+    def pending_release_versions(self) -> list[Version]:
         """Versions that have been cut but not published yet, newest first.
 
         A cut opens a ``bump-<version>`` PR against the beta or stable branch,
@@ -462,24 +434,20 @@ class Project:
                     found.add(version)
         return sorted(found, reverse=True)
 
-    def create_pr(
-        self, *, title: str, target_branch: BranchType, body: Optional[str] = None
-    ) -> PullRequest:
+    def create_pr(self, *, title: str, target_branch: BranchType, body: str | None = None) -> PullRequest:
         target_branch = self.lookup_branch(target_branch)
         self.push(set_upstream=True)
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
         pr = self.repo.create_pull(title, target_branch, self.branch, body=body)
-        gprint(
-            f"Created Pull Request #{pr.number} from {self.branch} against {target_branch}"
-        )
+        gprint(f"Created Pull Request #{pr.number} from {self.branch} against {target_branch}")
         click.launch(pr.html_url)
         return pr
 
     def create_release(
         self,
         version: Version,
-        body: Optional[str] = None,
+        body: str | None = None,
         prerelease: bool = False,
         draft: bool = False,
     ):
@@ -507,9 +475,7 @@ class Project:
         if draft:
             url = rel.html_url.replace("/tag/", "/edit/")
             click.launch(url)
-            log = click.style(
-                "Please go to {} and publish the draft.".format(url), fg="green"
-            )
+            log = click.style(f"Please go to {url} and publish the draft.", fg="green")
             confirm(log)
         else:
             time.sleep(1.0)
@@ -531,9 +497,7 @@ class Project:
         branch = self.lookup_branch(branch)
         # Check if we have frozen to a branch with .workon()
         if self._freeze_branch is not None and self._freeze_branch != branch:
-            raise EsphomeReleaseError(
-                "Branch is frozen to {} ({})".format(self._freeze_branch, branch)
-            )
+            raise EsphomeReleaseError(f"Branch is frozen to {self._freeze_branch} ({branch})")
         self.run_git("checkout", branch)
         self.branch = branch
 
@@ -563,17 +527,17 @@ class Project:
         yield None
         self._freeze_branch = None
 
-    def pull(self, remote: Optional[str] = None):
+    def pull(self, remote: str | None = None):
         """Pull the current branch from a remote."""
         if remote is not None:
             self.run_git("pull", remote, self.branch)
         else:
             self.run_git("pull")
 
-    def _spawn_subshell(self, *, run: str, print_lines: List[str]):
+    def _spawn_subshell(self, *, run: str, print_lines: list[str]):
         if not click.confirm("Spawn a shell to fix the problem?", default=True):
             return
-        old_cwd = os.getcwd()
+        old_cwd = Path.cwd()
         try:
             os.chdir(str(self.path))
             out = pexpect.run(run)
@@ -587,7 +551,7 @@ class Project:
             os.chdir(old_cwd)
         confirm("Confirm the problem has been fixed")
 
-    def merge(self, branch: BranchType, strategy_option: Optional[str] = None):
+    def merge(self, branch: BranchType, strategy_option: str | None = None):
         """Merge the branch `branch` into the current branch with an optional explicit strategy."""
         branch = self.lookup_branch(branch)
         command = ["merge"]
@@ -631,9 +595,7 @@ class Project:
         if confirm:
             gprint("=============== DIFF START ===============")
             self.run_git("diff", "--color", "--cached", show=True)
-            util.confirm(
-                click.style("==== Please verify the diff is correct ====", fg="green")
-            )
+            util.confirm(click.style("==== Please verify the diff is correct ====", fg="green"))
         cmd = [
             "commit",
             "-m",
@@ -682,18 +644,14 @@ class Project:
     @property
     def has_local_changes(self) -> bool:
         try:
-            self.run_git(
-                "diff-index", "--quiet", "HEAD", "--", fail_ok=True, silent=True
-            )
+            self.run_git("diff-index", "--quiet", "HEAD", "--", fail_ok=True, silent=True)
             return False
         except EsphomeReleaseError:
             return True
 
     def _has_staged_changes(self) -> bool:
         try:
-            self.run_git(
-                "diff", "--cached", "--quiet", fail_ok=True, silent=True
-            )
+            self.run_git("diff", "--cached", "--quiet", fail_ok=True, silent=True)
             return False
         except EsphomeReleaseError:
             return True
@@ -740,7 +698,7 @@ class Project:
         self.run_command("script/bump-version.py", str(version))
         self.commit(f"Bump version to {version}", no_verify=True, ignore_empty=True)
 
-    def prs_between(self, base: BranchType, head: BranchType) -> List[int]:
+    def prs_between(self, base: BranchType, head: BranchType) -> list[int]:
         base = self.lookup_branch(base)
         head = self.lookup_branch(head)
 
@@ -775,12 +733,8 @@ EsphomeDocsProject = Project(
     beta_branch="beta",
     dev_branch="next",
 )
-EsphomeHassioProject = Project(
-    repo_name="hassio", path=CONFIG["esphome_hassio_path"], shortname="hassio"
-)
-EsphomeIssuesProject = Project(
-    repo_name="issues", path=CONFIG["esphome_issues_path"], shortname="issues"
-)
+EsphomeHassioProject = Project(repo_name="hassio", path=CONFIG["esphome_hassio_path"], shortname="hassio")
+EsphomeIssuesProject = Project(repo_name="issues", path=CONFIG["esphome_issues_path"], shortname="issues")
 EsphomeFeatureRequestsProject = Project(
     repo_name="feature-requests",
     path=CONFIG["esphome_feature_requests_path"],
@@ -788,7 +742,7 @@ EsphomeFeatureRequestsProject = Project(
 )
 
 
-ALL_PROJECTS: List[Project] = [
+ALL_PROJECTS: list[Project] = [
     EsphomeProject,
     EsphomeDocsProject,
     EsphomeHassioProject,

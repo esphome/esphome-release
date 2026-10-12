@@ -1,13 +1,12 @@
 import functools
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Tuple
 
 from github3.pulls import PullRequest
 
 from .changelog_filter import resolve_changelog_labels
 from .model import BranchType, Version
-from .project import EsphomeDocsProject, EsphomeProject, Project
+from .project import Project
 from .util import gprint, process_asynchronously
 
 # Extra headers that are inserted in the changelog if
@@ -54,7 +53,7 @@ def format_change(
     *,
     project: Project,
     pr: PullRequest,
-    labels: List[str],
+    labels: list[str],
     include_author: bool = True,
 ) -> str:
     """One serialized changelog line: the PR line plus its label markers."""
@@ -70,7 +69,7 @@ def collect(
     base_version: Version,
     head: BranchType,
     head_version: Version,
-) -> List[Tuple[PullRequest, List[str]]]:
+) -> list[tuple[PullRequest, list[str]]]:
     """The changelog-relevant PRs between two refs, sorted by merge time.
 
     Each entry is the PR paired with its effective labels (see
@@ -78,18 +77,16 @@ def collect(
     """
     list_ = project.prs_between(base, head)
 
-    lines: List[Tuple[PullRequest, List[str]]] = []
+    lines: list[tuple[PullRequest, list[str]]] = []
 
     def job(pr_number):
         pr: PullRequest = project.get_pr(pr_number)
 
-        labels: List[str] = [label["name"] for label in pr.labels]
+        labels: list[str] = [label["name"] for label in pr.labels]
         milestone_title = pr.milestone["title"] if pr.milestone else None
 
         # Decide inclusion + effective labels (reverted/cherry-pick range).
-        effective_labels = resolve_changelog_labels(
-            labels, milestone_title, base_version, head_version
-        )
+        effective_labels = resolve_changelog_labels(labels, milestone_title, base_version, head_version)
         if effective_labels is None:
             # Excluded from this release's changelog.
             return
@@ -121,7 +118,7 @@ def generate(
 
     # Here we store the lines to insert for each label
     # Mapping from label to list of lines
-    label_groups: Dict[str, List[str]] = defaultdict(list)
+    label_groups: dict[str, list[str]] = defaultdict(list)
 
     # Create a list of all log lines in all relevant projects
     lines = collect(
@@ -132,24 +129,16 @@ def generate(
         head_version=head_version,
     )
 
-    is_patch = (
-        head_version is not None and head_version.patch != 0 and not head_version.beta
-    )
+    is_patch = head_version is not None and head_version.patch != 0 and not head_version.beta
 
     # A list of strings containing all serialized changes
-    changes: List[str] = []
+    changes: list[str] = []
 
     # Now go through the lines struct and serialize them
     for pr, labels in lines:
-        msg = format_change(
-            project=project, pr=pr, labels=labels, include_author=include_author
-        )
+        msg = format_change(project=project, pr=pr, labels=labels, include_author=include_author)
 
-        if (
-            not with_sections
-            or is_patch
-            or not any(label in labels for label in DEPENDENCY_LABELS)
-        ):
+        if not with_sections or is_patch or not any(label in labels for label in DEPENDENCY_LABELS):
             changes.append(msg)
 
         for label in labels:
@@ -158,11 +147,7 @@ def generate(
     outp = []
 
     if with_sections:
-        if (
-            head_version is not None
-            and head_version.patch != 0
-            and not head_version.beta
-        ):
+        if head_version is not None and head_version.patch != 0 and not head_version.beta:
             # Add header for patch releases
             if not gh_release:
                 now = datetime.now()
@@ -201,12 +186,7 @@ def generate(
     outp.append("")
 
     if with_sections and not is_patch:
-        depdendency_prs = [
-            pr
-            for label, prs in label_groups.items()
-            if label in DEPENDENCY_LABELS
-            for pr in prs
-        ]
+        depdendency_prs = [pr for label, prs in label_groups.items() if label in DEPENDENCY_LABELS for pr in prs]
         if depdendency_prs:
             heading = format_heading("Dependency Changes", level=3)
             outp.append("<details>")

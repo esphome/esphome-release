@@ -16,7 +16,6 @@ from esphomerelease.changelog_url import (
 )
 from esphomerelease.model import Version
 
-
 # ---- changelog_website_url -------------------------------------------------
 
 
@@ -52,39 +51,27 @@ def test_website_url_does_not_mutate_input():
 
 
 def test_link_for_first_beta_primary():
-    assert use_website_link_for_release(
-        Version.parse("2026.6.0b1"), is_primary_project=True
-    )
+    assert use_website_link_for_release(Version.parse("2026.6.0b1"), is_primary_project=True)
 
 
 def test_link_for_first_stable_release_primary():
-    assert use_website_link_for_release(
-        Version.parse("2026.6.0"), is_primary_project=True
-    )
+    assert use_website_link_for_release(Version.parse("2026.6.0"), is_primary_project=True)
 
 
 def test_no_link_for_later_beta_primary():
-    assert not use_website_link_for_release(
-        Version.parse("2026.6.0b2"), is_primary_project=True
-    )
+    assert not use_website_link_for_release(Version.parse("2026.6.0b2"), is_primary_project=True)
 
 
 def test_no_link_for_patch_release_primary():
-    assert not use_website_link_for_release(
-        Version.parse("2026.6.3"), is_primary_project=True
-    )
+    assert not use_website_link_for_release(Version.parse("2026.6.3"), is_primary_project=True)
 
 
 def test_no_link_for_non_primary_even_on_first_beta():
-    assert not use_website_link_for_release(
-        Version.parse("2026.6.0b1"), is_primary_project=False
-    )
+    assert not use_website_link_for_release(Version.parse("2026.6.0b1"), is_primary_project=False)
 
 
 def test_no_link_for_non_primary_first_release():
-    assert not use_website_link_for_release(
-        Version.parse("2026.6.0"), is_primary_project=False
-    )
+    assert not use_website_link_for_release(Version.parse("2026.6.0"), is_primary_project=False)
 
 
 # ---- changelog_too_long ----------------------------------------------------

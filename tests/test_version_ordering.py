@@ -58,6 +58,4 @@ def test_max_picks_highest_regardless_of_input_order():
 def test_sorted_matches_expected_order():
     versions = [Version.parse(value) for value in reversed(ORDERED)]
 
-    assert [str(v) for v in sorted(versions)] == [
-        str(Version.parse(value)) for value in ORDERED
-    ]
+    assert [str(v) for v in sorted(versions)] == [str(Version.parse(value)) for value in ORDERED]

@@ -90,7 +90,7 @@ Push the change, and tag the release `v{version}` in the GitHub releases interfa
 
 ## Running `esphomerelease`
 
-Install with `pip3 install -e .` (preferably in a venv)
+Install with `uv sync` (creates `.venv`)
 
 To create a release, do:
 

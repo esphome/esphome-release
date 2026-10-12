@@ -48,9 +48,7 @@ def mods(tmp_path, monkeypatch):
     import esphomerelease.commands as commands_mod
 
     importlib.reload(commands_mod)
-    return types.SimpleNamespace(
-        ci=ci_mod, cutting=cutting_mod, commands=commands_mod, project=project_mod
-    )
+    return types.SimpleNamespace(ci=ci_mod, cutting=cutting_mod, commands=commands_mod, project=project_mod)
 
 
 @pytest.fixture
@@ -65,9 +63,7 @@ def _version(mods, beta: bool):
 
 
 def _pr(mods, project, number: int):
-    return mods.ci.WatchedPr(
-        project=project, number=number, url=f"https://x/{number}"
-    )
+    return mods.ci.WatchedPr(project=project, number=number, url=f"https://x/{number}")
 
 
 # ---------------------------------------------------------------- notify
@@ -274,9 +270,7 @@ def test_fetch_statuses_http_error(mods, monkeypatch):
 def test_fetch_statuses_graphql_errors(mods, monkeypatch):
     ci = mods.ci
     monkeypatch.setattr(ci, "get_token", lambda: "tok")
-    monkeypatch.setattr(
-        ci.requests, "post", lambda *a, **k: _Resp({"errors": [{"message": "bad"}]})
-    )
+    monkeypatch.setattr(ci.requests, "post", lambda *a, **k: _Resp({"errors": [{"message": "bad"}]}))
     with pytest.raises(ci.EsphomeReleaseError, match="bad"):
         ci.fetch_statuses(_watched(mods))
 
@@ -314,12 +308,8 @@ def _fake_get_pr(mods, monkeypatch, results, calls):
 
         return get_pr_by_title
 
-    monkeypatch.setattr(
-        mods.project.EsphomeProject, "get_pr_by_title", make("code"), raising=False
-    )
-    monkeypatch.setattr(
-        mods.project.EsphomeDocsProject, "get_pr_by_title", make("docs"), raising=False
-    )
+    monkeypatch.setattr(mods.project.EsphomeProject, "get_pr_by_title", make("code"), raising=False)
+    monkeypatch.setattr(mods.project.EsphomeDocsProject, "get_pr_by_title", make("docs"), raising=False)
 
 
 def _gh_pr(number):
@@ -397,9 +387,7 @@ class _Driver:
         monkeypatch.setattr(
             ci,
             "notify",
-            lambda title, msg, *, urgent=False: self.notifications.append(
-                (title, msg, urgent)
-            ),
+            lambda title, msg, *, urgent=False: self.notifications.append((title, msg, urgent)),
         )
 
     def fetch(self, prs):
@@ -460,9 +448,7 @@ def test_watch_loop_full_scenario(mods, monkeypatch, capsys):
     assert "not passing yet (currently failure)" in out
 
 
-def test_watch_loop_request_error_first_poll_then_enter_ignored(
-    mods, monkeypatch, capsys
-):
+def test_watch_loop_request_error_first_poll_then_enter_ignored(mods, monkeypatch, capsys):
     ci = mods.ci
     ok = _statuses(mods, ci.CiState.SUCCESS, ci.CiState.SUCCESS)
     steps = [
@@ -511,14 +497,14 @@ def test_watch_publish_confirmed(mods, monkeypatch, beta):
     )
     calls: list = []
     monkeypatch.setattr(
-        ci.cutting, "publish_beta_release", lambda v, projects, base, confirmed: calls.append(
-            ("b", v, projects, base, confirmed)
-        )
+        ci.cutting,
+        "publish_beta_release",
+        lambda v, projects, base, confirmed: calls.append(("b", v, projects, base, confirmed)),
     )
     monkeypatch.setattr(
-        ci.cutting, "publish_release", lambda v, projects, base, confirmed: calls.append(
-            ("s", v, projects, base, confirmed)
-        )
+        ci.cutting,
+        "publish_release",
+        lambda v, projects, base, confirmed: calls.append(("s", v, projects, base, confirmed)),
     )
     version = _version(mods, beta)
     base = _version(mods, False)
@@ -611,15 +597,9 @@ BASE = "base-sentinel"
 def test_cut_cli_watch_wiring(mods, monkeypatch, args, watched):
     cmds = mods.commands
     order: list = []
-    monkeypatch.setattr(
-        cmds.cutting, "cut_beta_release", lambda v: order.append("cut") or BASE
-    )
-    monkeypatch.setattr(
-        cmds, "_commit_user_cache_if_changed", lambda: order.append("cache")
-    )
-    monkeypatch.setattr(
-        cmds.ci_watch, "watch_release_ci", lambda v, base: order.append(("watch", str(v), base))
-    )
+    monkeypatch.setattr(cmds.cutting, "cut_beta_release", lambda v: order.append("cut") or BASE)
+    monkeypatch.setattr(cmds, "_commit_user_cache_if_changed", lambda: order.append("cache"))
+    monkeypatch.setattr(cmds.ci_watch, "watch_release_ci", lambda v, base: order.append(("watch", str(v), base)))
     result = CliRunner().invoke(cmds.cli, args)
     assert result.exit_code == 0, result.output
     expected: list = ["cut", "cache"]
@@ -633,8 +613,6 @@ def test_cut_cli_stable_path(mods, monkeypatch):
     order: list = []
     monkeypatch.setattr(cmds.cutting, "cut_release", lambda v: order.append("cut") or BASE)
     monkeypatch.setattr(cmds, "_commit_user_cache_if_changed", lambda: None)
-    monkeypatch.setattr(
-        cmds.ci_watch, "watch_release_ci", lambda v, base: order.append(("w", base))
-    )
+    monkeypatch.setattr(cmds.ci_watch, "watch_release_ci", lambda v, base: order.append(("w", base)))
     assert CliRunner().invoke(cmds.cli, ["cut", "2026.10.0"]).exit_code == 0
     assert order == ["cut", ("w", BASE)]

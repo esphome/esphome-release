@@ -16,19 +16,13 @@ from pathlib import Path
 
 import pytest
 
-NOTICE = (
-    "> [!NOTE]\n"
-    "> This is a beta release. Details on this page may change before the stable release is published."
-)
+NOTICE = "> [!NOTE]\n> This is a beta release. Details on this page may change before the stable release is published."
 
 ROW = '["New Thing", "/components/new_thing/", "new_thing.svg"],'
 
 EXAMPLE_ROW = '// ["Component Name", "/components/path/", "image.png"],'
 
-OG = (
-    "https://assets.openhomefoundation.org/opengraph"
-    "?url=https://esphome.io/blog/2026/07/15/esphome-2026-7"
-)
+OG = "https://assets.openhomefoundation.org/opengraph?url=https://esphome.io/blog/2026/07/15/esphome-2026-7"
 
 # conftest.BLOG_TEMPLATE filled for 2026.7.0b1, dated 2026-07-15, one drafted
 # row. {TAGLINE} and {DESCRIPTION} stay literal for manual fill, matching the
@@ -66,8 +60,14 @@ For the complete list of every merged pull request in this release, see the
 def _post_path(cutting) -> Path:
     return (
         Path(cutting.EsphomeDocsProject.path)
-        / "src" / "content" / "docs" / "blog"
-        / "2026" / "07" / "15" / "esphome-2026-7.mdx"
+        / "src"
+        / "content"
+        / "docs"
+        / "blog"
+        / "2026"
+        / "07"
+        / "15"
+        / "esphome-2026-7.mdx"
     )
 
 
@@ -178,9 +178,7 @@ def test_render_blog_post_template_without_table(cutting, monkeypatch):
     assert any("add the drafted rows manually" in msg for msg in messages)
 
 
-def _run_update_blog_post(
-    cutting, monkeypatch, version_str, base_str, *, prompts=(), prs=None
-):
+def _run_update_blog_post(cutting, monkeypatch, version_str, base_str, *, prompts=(), prs=None):
     """Drive the real ``_docs_update_blog_post`` with the side effects stubbed.
 
     Only the interactive/remote edges are stubbed (git checkout, VS Code, the
@@ -208,12 +206,8 @@ def _run_update_blog_post(
             return real_run_command(*args, **kwargs)
         return b""
 
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "workon", lambda branch: contextlib.nullcontext()
-    )
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "commit", lambda msg, **k: commits.append(msg)
-    )
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "workon", lambda branch: contextlib.nullcontext())
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "commit", lambda msg, **k: commits.append(msg))
     monkeypatch.setattr(cutting.EsphomeDocsProject, "run_command", fake_run_command)
     monkeypatch.setattr(cutting, "open_vscode", opened.append)
     monkeypatch.setattr(cutting, "confirm", lambda msg: None)
@@ -226,9 +220,7 @@ def _run_update_blog_post(
         monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
         monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
 
-    url, review = cutting._docs_update_blog_post(
-        version=Version.parse(version_str), base=Version.parse(base_str)
-    )
+    url, review = cutting._docs_update_blog_post(version=Version.parse(version_str), base=Version.parse(base_str))
     return url, review, commits, commands, messages, opened
 
 
@@ -261,10 +253,7 @@ def test_update_blog_post_first_beta_creates_post(cutting, docs_git, monkeypatch
     # Nothing answered the prompts here, so the placeholders are still called out.
     assert "Fill in the {TAGLINE} and {DESCRIPTION} placeholders manually" in messages
     # The tagline hint steers away from jargon and abbreviations.
-    assert any(
-        "no jargon or abbreviations" in msg and "encrypted OTA" in msg
-        for msg in messages
-    )
+    assert any("no jargon or abbreviations" in msg and "encrypted OTA" in msg for msg in messages)
 
 
 def test_update_blog_post_later_beta_keeps_notice(cutting, monkeypatch):
@@ -272,9 +261,7 @@ def test_update_blog_post_later_beta_keeps_notice(cutting, monkeypatch):
     post.parent.mkdir(parents=True)
     post.write_text(EXPECTED_POST)
 
-    url, review, commits, commands, _, opened = _run_update_blog_post(
-        cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1"
-    )
+    url, review, commits, commands, _, opened = _run_update_blog_post(cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1")
     assert url == "/blog/2026/07/15/esphome-2026-7/"
     assert post.read_text().count(NOTICE) == 1
     assert ("script/bump-version.py", "2026.7.0b2") in commands
@@ -289,9 +276,7 @@ def test_update_blog_post_stable_removes_notice(cutting, monkeypatch):
     post.parent.mkdir(parents=True)
     post.write_text(cutting._with_beta_notice(EXPECTED_POST))
 
-    url, review, commits, commands, _, _ = _run_update_blog_post(
-        cutting, monkeypatch, "2026.7.0", "2026.6.0"
-    )
+    url, review, commits, commands, _, _ = _run_update_blog_post(cutting, monkeypatch, "2026.7.0", "2026.6.0")
     assert url == "/blog/2026/07/15/esphome-2026-7/"
     assert post.read_text() == EXPECTED_POST
     assert ("script/bump-version.py", "2026.7.0") in commands
@@ -341,9 +326,7 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
 
     # Re-running a patch cut is idempotent and asks for no review.
     before = post.read_text()
-    _, review, _, _, _, _ = _run_update_blog_post(
-        cutting, monkeypatch, "2026.7.2", "2026.7.1", prs=[fix2]
-    )
+    _, review, _, _, _, _ = _run_update_blog_post(cutting, monkeypatch, "2026.7.2", "2026.7.1", prs=[fix2])
     assert post.read_text() == before
     assert review is None
 
@@ -351,9 +334,7 @@ def test_update_blog_post_patch_appends_section(cutting, monkeypatch):
 @pytest.mark.parametrize("version_str", ["2026.7.1", "2026.7.0b2", "2026.7.0"])
 def test_update_blog_post_missing_post_skips(cutting, monkeypatch, version_str):
     """Cuts of pre-blog cycles leave the tree and version.json alone."""
-    url, review, commits, commands, messages, _ = _run_update_blog_post(
-        cutting, monkeypatch, version_str, "2026.6.0"
-    )
+    url, review, commits, commands, messages, _ = _run_update_blog_post(cutting, monkeypatch, version_str, "2026.6.0")
     assert url is None
     assert review is None
     assert commits == []
@@ -362,10 +343,7 @@ def test_update_blog_post_missing_post_skips(cutting, monkeypatch, version_str):
 
 
 def _prompts_dir(cutting) -> Path:
-    return (
-        Path(cutting.EsphomeDocsProject.path)
-        / "script" / "cache" / "2026.7.0" / "prompts"
-    )
+    return Path(cutting.EsphomeDocsProject.path) / "script" / "cache" / "2026.7.0" / "prompts"
 
 
 def _write_prompts(cutting, names) -> None:
@@ -425,9 +403,7 @@ def test_generate_release_notes_runs_every_step(cutting, monkeypatch):
     assert all(kw == {"live": True, "fail_ok": True} for kw in kwargs_seen)
 
 
-def test_generate_release_notes_skips_prompts_that_were_not_written(
-    cutting, monkeypatch
-):
+def test_generate_release_notes_skips_prompts_that_were_not_written(cutting, monkeypatch):
     """A cycle without breaking changes gets no such prompt: skip, don't fail."""
     from esphomerelease.model import Version
 
@@ -457,10 +433,7 @@ def test_generate_release_notes_stops_when_the_prompts_fail(cutting, monkeypatch
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [(cutting.RELEASE_NOTES_SCRIPT, "2026.7.0")]
-    assert any(
-        msg.startswith(f"Running {cutting.RELEASE_NOTES_SCRIPT} failed")
-        for msg in messages
-    )
+    assert any(msg.startswith(f"Running {cutting.RELEASE_NOTES_SCRIPT} failed") for msg in messages)
 
 
 def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatch):
@@ -478,9 +451,7 @@ def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatc
         (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
     ]
-    assert any(
-        msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages
-    )
+    assert any(msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages)
 
 
 def test_release_notes_prompts_ends_with_companion_summary(cutting):
@@ -522,14 +493,10 @@ def test_update_blog_post_filled_post_does_not_warn(cutting, monkeypatch):
     post = _post_path(cutting)
     post.parent.mkdir(parents=True)
     post.write_text(
-        EXPECTED_POST.replace("{TAGLINE}", "Faster Everything").replace(
-            "{DESCRIPTION}", "A release about speed."
-        )
+        EXPECTED_POST.replace("{TAGLINE}", "Faster Everything").replace("{DESCRIPTION}", "A release about speed.")
     )
 
-    _, _, _, _, messages, _ = _run_update_blog_post(
-        cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1"
-    )
+    _, _, _, _, messages, _ = _run_update_blog_post(cutting, monkeypatch, "2026.7.0b2", "2026.7.0b1")
     assert not any("placeholders manually" in msg for msg in messages)
     assert not any("jargon or abbreviations" in msg for msg in messages)
 
@@ -556,6 +523,4 @@ def test_generate_release_notes_survives_a_missing_cli(cutting, monkeypatch):
         (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
     ]
-    assert any(
-        msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages
-    )
+    assert any(msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages)

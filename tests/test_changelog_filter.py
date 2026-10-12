@@ -21,16 +21,12 @@ def test_plain_pr_is_included_unchanged():
 def test_reverted_pr_is_excluded():
     assert resolve_changelog_labels(["reverted"], None, BASE, HEAD) is None
     # Excluded even alongside other labels.
-    assert (
-        resolve_changelog_labels(["reverted", "new-feature"], None, BASE, HEAD) is None
-    )
+    assert resolve_changelog_labels(["reverted", "new-feature"], None, BASE, HEAD) is None
 
 
 def test_cherry_pick_inside_range_is_included():
     # 1.15.0 < 1.15.2 <= 1.16.0
-    result = resolve_changelog_labels(
-        ["cherry-picked"], "1.15.2", BASE, HEAD
-    )
+    result = resolve_changelog_labels(["cherry-picked"], "1.15.2", BASE, HEAD)
     assert result == ["cherry-picked"]
 
 
@@ -54,9 +50,7 @@ def test_cherry_pick_after_head_is_excluded():
 
 
 def test_cherry_pick_unparseable_milestone_keeps_pr_drops_label():
-    result = resolve_changelog_labels(
-        ["cherry-picked", "bugfix"], "not-a-version", BASE, HEAD
-    )
+    result = resolve_changelog_labels(["cherry-picked", "bugfix"], "not-a-version", BASE, HEAD)
     assert result == ["bugfix"]
 
 
@@ -73,12 +67,7 @@ def test_input_labels_not_mutated():
 
 def test_reverted_takes_precedence_over_cherry_pick():
     # A reverted cherry-pick is dropped regardless of milestone range.
-    assert (
-        resolve_changelog_labels(
-            ["reverted", "cherry-picked"], "1.15.2", BASE, HEAD
-        )
-        is None
-    )
+    assert resolve_changelog_labels(["reverted", "cherry-picked"], "1.15.2", BASE, HEAD) is None
 
 
 # 2026.8.0b6 regression: cherry-picked PRs are milestoned with the cycle's
@@ -92,37 +81,20 @@ def test_cherry_pick_milestoned_at_cycle_final_is_included_for_beta_head():
     # This is the 2026.8.0b6 regression: the milestone is the cycle's final
     # version (2026.8.0), which sorts above a beta head unless the upper
     # bound is normalised to the final version.
-    result = resolve_changelog_labels(
-        ["cherry-picked"], "2026.8.0", BETA_BASE, BETA_HEAD
-    )
+    result = resolve_changelog_labels(["cherry-picked"], "2026.8.0", BETA_BASE, BETA_HEAD)
     assert result == ["cherry-picked"]
 
 
 def test_cherry_pick_milestoned_for_later_cycle_is_excluded_for_beta_head():
-    assert (
-        resolve_changelog_labels(
-            ["cherry-picked"], "2026.9.0", BETA_BASE, BETA_HEAD
-        )
-        is None
-    )
+    assert resolve_changelog_labels(["cherry-picked"], "2026.9.0", BETA_BASE, BETA_HEAD) is None
 
 
 def test_cherry_pick_milestoned_at_or_before_base_is_excluded_for_beta_head():
     # Milestoned for an earlier cycle entirely.
-    assert (
-        resolve_changelog_labels(
-            ["cherry-picked"], "2026.7.0", BETA_BASE, BETA_HEAD
-        )
-        is None
-    )
+    assert resolve_changelog_labels(["cherry-picked"], "2026.7.0", BETA_BASE, BETA_HEAD) is None
     # Milestoned exactly at the (previous-beta) base is excluded too -
     # already shipped in the base release.
-    assert (
-        resolve_changelog_labels(
-            ["cherry-picked"], "2026.8.0b5", BETA_BASE, BETA_HEAD
-        )
-        is None
-    )
+    assert resolve_changelog_labels(["cherry-picked"], "2026.8.0b5", BETA_BASE, BETA_HEAD) is None
 
 
 def test_cherry_pick_milestoned_at_cycle_final_is_included_for_dev_head():
@@ -130,9 +102,7 @@ def test_cherry_pick_milestoned_at_cycle_final_is_included_for_dev_head():
     # same normalisation as beta heads.
     dev_base = Version.parse("2026.7.0")
     dev_head = dev_base.next_dev_version  # 2026.8.0-dev
-    result = resolve_changelog_labels(
-        ["cherry-picked"], "2026.8.0", dev_base, dev_head
-    )
+    result = resolve_changelog_labels(["cherry-picked"], "2026.8.0", dev_base, dev_head)
     assert result == ["cherry-picked"]
 
 
@@ -141,9 +111,7 @@ def test_cherry_pick_inside_range_for_non_beta_head_is_unchanged():
     # is the head version itself, unmodified.
     patch_base = Version.parse("2026.8.0")
     patch_head = Version.parse("2026.8.1")
-    result = resolve_changelog_labels(
-        ["cherry-picked"], "2026.8.1", patch_base, patch_head
-    )
+    result = resolve_changelog_labels(["cherry-picked"], "2026.8.1", patch_base, patch_head)
     assert result == ["cherry-picked"]
 
 
@@ -166,37 +134,25 @@ def test_patch_excludes_pr_without_a_milestone():
 
 
 def test_patch_excludes_pr_with_unparseable_milestone():
-    assert (
-        resolve_changelog_labels(["bugfix"], "not-a-version", PATCH_BASE, PATCH_HEAD)
-        is None
-    )
+    assert resolve_changelog_labels(["bugfix"], "not-a-version", PATCH_BASE, PATCH_HEAD) is None
 
 
 def test_patch_excludes_pr_on_the_cycle_milestone():
     # Milestoned for the .0 release - already shipped in the base.
-    assert (
-        resolve_changelog_labels(["bugfix"], "2026.8.0", PATCH_BASE, PATCH_HEAD) is None
-    )
+    assert resolve_changelog_labels(["bugfix"], "2026.8.0", PATCH_BASE, PATCH_HEAD) is None
 
 
 def test_patch_excludes_pr_on_a_later_patch_milestone():
-    assert (
-        resolve_changelog_labels(["bugfix"], "2026.8.2", PATCH_BASE, PATCH_HEAD) is None
-    )
+    assert resolve_changelog_labels(["bugfix"], "2026.8.2", PATCH_BASE, PATCH_HEAD) is None
 
 
 def test_patch_keeps_cherry_picked_label_on_milestone_pr():
-    result = resolve_changelog_labels(
-        ["cherry-picked"], "2026.8.1", PATCH_BASE, PATCH_HEAD
-    )
+    result = resolve_changelog_labels(["cherry-picked"], "2026.8.1", PATCH_BASE, PATCH_HEAD)
     assert result == ["cherry-picked"]
 
 
 def test_patch_reverted_takes_precedence():
-    assert (
-        resolve_changelog_labels(["reverted"], "2026.8.1", PATCH_BASE, PATCH_HEAD)
-        is None
-    )
+    assert resolve_changelog_labels(["reverted"], "2026.8.1", PATCH_BASE, PATCH_HEAD) is None
 
 
 def test_patch_input_labels_not_mutated():
@@ -207,13 +163,9 @@ def test_patch_input_labels_not_mutated():
 
 def test_patch_beta_head_is_not_milestone_filtered():
     # A beta of a patch line still goes through the generic rules.
-    assert resolve_changelog_labels(
-        ["bugfix"], None, PATCH_BASE, Version.parse("2026.8.1b1")
-    ) == ["bugfix"]
+    assert resolve_changelog_labels(["bugfix"], None, PATCH_BASE, Version.parse("2026.8.1b1")) == ["bugfix"]
 
 
 def test_patch_dev_head_is_not_milestone_filtered():
     dev_head = Version.parse("2026.8.1").replace(dev=True)
-    assert resolve_changelog_labels(["bugfix"], None, PATCH_BASE, dev_head) == [
-        "bugfix"
-    ]
+    assert resolve_changelog_labels(["bugfix"], None, PATCH_BASE, dev_head) == ["bugfix"]

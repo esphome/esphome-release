@@ -22,6 +22,8 @@ _SCRIPT = Path(__file__).resolve().parents[1] / "check_docs_prs.py"
 @pytest.fixture
 def script():
     spec = importlib.util.spec_from_file_location("check_docs_prs", _SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -86,18 +88,18 @@ def test_main_flags_merged_and_dedupes_lookups(script, monkeypatch, capsys):
     assert sorted(calls) == [100, 200, 300]  # 100 fetched once despite two refs
 
     out = capsys.readouterr().out
-    assert "Docs PR #1" in out and "Docs PR #2" in out
+    assert "Docs PR #1" in out
+    assert "Docs PR #2" in out
     # PR 3 links only an open + unresolvable PR; PR 4 has no links.
-    assert "Docs PR #3" not in out and "Docs PR #4" not in out
+    assert "Docs PR #3" not in out
+    assert "Docs PR #4" not in out
     assert "Summary: 2 docs PRs need attention" in out
     assert "confirmed, they link back" in out
     assert "unconfirmed" not in out
 
 
 def test_main_nothing_flagged(script, monkeypatch, capsys):
-    monkeypatch.setattr(
-        script, "get_open_docs_prs", lambda: [_docs_pr(1, "No links")]
-    )
+    monkeypatch.setattr(script, "get_open_docs_prs", lambda: [_docs_pr(1, "No links")])
     monkeypatch.setattr(
         script,
         "get_esphome_pr_state",
@@ -152,12 +154,8 @@ def test_main_shows_unconfirmed_section_for_flagged_pr(script, monkeypatch, caps
     monkeypatch.setattr(script, "get_open_docs_prs", lambda: [_docs_pr(5, docs_body)])
 
     states = {
-        100: script.LinkedPR(
-            100, "MERGED", "2026-07-01T00:00:00Z", "Paired code PR", _back_link(5)
-        ),
-        200: script.LinkedPR(
-            200, "MERGED", "2026-06-01T00:00:00Z", "Unrelated code PR", "no back-link"
-        ),
+        100: script.LinkedPR(100, "MERGED", "2026-07-01T00:00:00Z", "Paired code PR", _back_link(5)),
+        200: script.LinkedPR(200, "MERGED", "2026-06-01T00:00:00Z", "Unrelated code PR", "no back-link"),
     }
     monkeypatch.setattr(script, "get_esphome_pr_state", lambda number: states[number])
 
@@ -187,14 +185,9 @@ def test_get_esphome_pr_state_parses_gh_output(script, monkeypatch):
 
     linked = script.get_esphome_pr_state(17797)
 
-    assert linked == script.LinkedPR(
-        17797, "MERGED", "2026-07-01T00:00:00Z", "Some PR", "- esphome/esphome.io#7071"
-    )
+    assert linked == script.LinkedPR(17797, "MERGED", "2026-07-01T00:00:00Z", "Some PR", "- esphome/esphome.io#7071")
     # The body rides along on the existing call rather than costing a second one.
-    assert recorded == [
-        ["pr", "view", "17797", "--repo", "esphome/esphome", "--json",
-         "state,mergedAt,title,body"]
-    ]
+    assert recorded == [["pr", "view", "17797", "--repo", "esphome/esphome", "--json", "state,mergedAt,title,body"]]
 
 
 def test_get_esphome_pr_state_null_body_becomes_empty_string(script, monkeypatch):

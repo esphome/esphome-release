@@ -18,7 +18,7 @@ assert exactly what happened, including when nothing should have happened at
 all (e.g. no prompt call, no milestone creation).
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import click
 import pytest
@@ -32,8 +32,8 @@ class FakeIssue:
 
     def __init__(self, number: int, *, is_pr: bool = True) -> None:
         self.number = number
-        self.pull_request_urls: Optional[dict] = {"x": "y"} if is_pr else None
-        self.edit_calls: List[Dict[str, Any]] = []
+        self.pull_request_urls: dict | None = {"x": "y"} if is_pr else None
+        self.edit_calls: list[dict[str, Any]] = []
 
     def edit(self, **kwargs: Any) -> None:
         self.edit_calls.append(kwargs)
@@ -65,29 +65,29 @@ class FakeRepo:
     def __init__(
         self,
         *,
-        milestones: Optional[List[FakeMilestone]] = None,
-        open_issues: Optional[Dict[int, List[FakeIssue]]] = None,
-        pulls: Optional[Dict[int, FakePull]] = None,
+        milestones: list[FakeMilestone] | None = None,
+        open_issues: dict[int, list[FakeIssue]] | None = None,
+        pulls: dict[int, FakePull] | None = None,
     ) -> None:
-        self._milestones: List[FakeMilestone] = milestones or []
-        self._open_issues: Dict[int, List[FakeIssue]] = open_issues or {}
-        self._pulls: Dict[int, FakePull] = pulls or {}
-        self.issues_calls: List[tuple] = []
-        self.create_milestone_calls: List[tuple] = []
-        self.pull_request_calls: List[int] = []
+        self._milestones: list[FakeMilestone] = milestones or []
+        self._open_issues: dict[int, list[FakeIssue]] = open_issues or {}
+        self._pulls: dict[int, FakePull] = pulls or {}
+        self.issues_calls: list[tuple] = []
+        self.create_milestone_calls: list[tuple] = []
+        self.pull_request_calls: list[int] = []
         self._next_number = 1000
 
-    def milestones(self, state: str) -> List[FakeMilestone]:
+    def milestones(self, state: str) -> list[FakeMilestone]:
         assert state == "open"
         return list(self._milestones)
 
-    def issues(self, *, milestone: int, state: str) -> List[FakeIssue]:
+    def issues(self, *, milestone: int, state: str) -> list[FakeIssue]:
         self.issues_calls.append((milestone, state))
         if state != "open":
             return []
         return list(self._open_issues.get(milestone, []))
 
-    def create_milestone(self, title: str, *, due_on: Optional[str] = None) -> FakeMilestone:
+    def create_milestone(self, title: str, *, due_on: str | None = None) -> FakeMilestone:
         self.create_milestone_calls.append((title, due_on))
         ms = FakeMilestone(title, self._next_number)
         self._next_number += 1
@@ -109,12 +109,8 @@ def _wire(cutting: Any, *, code_repo: FakeRepo, docs_repo: FakeRepo) -> None:
 
 def _no_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail the test if either prompt style is invoked."""
-    monkeypatch.setattr(
-        click, "confirm", lambda *a, **k: pytest.fail("should not prompt (confirm)")
-    )
-    monkeypatch.setattr(
-        click, "prompt", lambda *a, **k: pytest.fail("should not prompt (prompt)")
-    )
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: pytest.fail("should not prompt (confirm)"))
+    monkeypatch.setattr(click, "prompt", lambda *a, **k: pytest.fail("should not prompt (prompt)"))
 
 
 PATCH_VERSION = Version.parse("2026.6.1")
@@ -172,7 +168,7 @@ def test_beta_cut_warns_and_returns_without_prompting(cutting, monkeypatch, caps
 
 def _make_prompt(answer: str, *, on_call=None):
     """A fake ``click.prompt`` returning ``answer`` and recording its kwargs."""
-    calls: List[tuple] = []
+    calls: list[tuple] = []
 
     def prompt(text: str, **kwargs: Any) -> str:
         calls.append((text, kwargs))
@@ -183,9 +179,7 @@ def _make_prompt(answer: str, *, on_call=None):
     return prompt, calls
 
 
-def test_patch_release_ignore_moves_prs_with_existing_target_milestone(
-    cutting, monkeypatch, capsys
-):
+def test_patch_release_ignore_moves_prs_with_existing_target_milestone(cutting, monkeypatch, capsys):
     """Answering 'i' really moves the PR via Project.move_open_prs_to_milestone,
     reusing the 2026.6.2 milestone since it already exists."""
     milestone = FakeMilestone("2026.6.1", 1)
@@ -201,9 +195,7 @@ def test_patch_release_ignore_moves_prs_with_existing_target_milestone(
 
     prompt, calls = _make_prompt("i")
     monkeypatch.setattr(click, "prompt", prompt)
-    monkeypatch.setattr(
-        click, "confirm", lambda *a, **k: pytest.fail("should not use confirm")
-    )
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: pytest.fail("should not use confirm"))
 
     cutting._check_open_milestone_prs(PATCH_VERSION, block=True)
 
@@ -354,9 +346,7 @@ def test_full_zero_release_uses_plain_confirm_accept_then_clears(cutting, monkey
     assert len(confirm_calls) == 1
 
 
-def test_ignore_moves_prs_across_both_projects_skipping_missing_milestone(
-    cutting, monkeypatch, capsys
-):
+def test_ignore_moves_prs_across_both_projects_skipping_missing_milestone(cutting, monkeypatch, capsys):
     """Open PRs on both esphome and esphome.io get moved; a project missing the
     milestone entirely (docs here) is skipped without error."""
     milestone = FakeMilestone("2026.6.1", 1)

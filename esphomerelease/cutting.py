@@ -64,10 +64,7 @@ def _move_open_prs_to_next_patch_milestone(version: Version):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         milestone = proj.get_milestone_by_title(milestone_title)
         for issue in proj.move_open_prs_to_milestone(milestone, next_title):
-            gprint(
-                f"Moved [{proj.shortname}] #{issue.number} to the "
-                f"{next_title} milestone"
-            )
+            gprint(f"Moved [{proj.shortname}] #{issue.number} to the {next_title} milestone")
 
 
 def _check_open_milestone_prs(version: Version, *, block: bool):
@@ -90,16 +87,17 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
             milestone = proj.get_milestone_by_title(milestone_title)
             if milestone is None:
                 continue
-            for pr in proj.get_open_prs_for_milestone(milestone):
-                open_prs.append((proj, pr))
+            open_prs.extend((proj, pr) for pr in proj.get_open_prs_for_milestone(milestone))
 
         if not open_prs:
             return
 
-        gprint(click.style(
-            f"Warning: Found {len(open_prs)} open PR(s) on the {milestone_title} milestone:",
-            fg="yellow",
-        ))
+        gprint(
+            click.style(
+                f"Warning: Found {len(open_prs)} open PR(s) on the {milestone_title} milestone:",
+                fg="yellow",
+            )
+        )
         for proj, pr in open_prs:
             gprint(f"  - [{proj.shortname}] #{pr.number}: {pr.title} ({pr.html_url})")
 
@@ -117,8 +115,7 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
         next_title = str(version.next_patch_version)
         choice = click.prompt(
             click.style(
-                f"[y] check again, [i] ignore (move to the {next_title} "
-                "milestone and cut anyway), [n] abort",
+                f"[y] check again, [i] ignore (move to the {next_title} milestone and cut anyway), [n] abort",
                 fg="yellow",
             ),
             type=click.Choice(["y", "i", "n"]),
@@ -157,14 +154,13 @@ def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPR
 
     references: list[tuple[PullRequest, int]] = []
     for code_pr in EsphomeProject.get_next_beta_prs_for_milestone(milestone):
-        for docs_number in extract_docs_pr_numbers(code_pr.body):
-            references.append((code_pr, docs_number))
+        references.extend((code_pr, docs_number) for docs_number in extract_docs_pr_numbers(code_pr.body))
 
     if not references:
         return [], []
 
     docs_numbers = sorted({number for _, number in references})
-    docs_prs = dict(zip(docs_numbers, EsphomeDocsProject.get_prs(docs_numbers)))
+    docs_prs = dict(zip(docs_numbers, EsphomeDocsProject.get_prs(docs_numbers), strict=True))
 
     unmerged: list[DocsPRPair] = []
     unconfirmed: list[DocsPRPair] = []
@@ -197,8 +193,7 @@ def _check_linked_docs_prs(version: Version):
 
         if unconfirmed:
             gprint(
-                f"Note: {len(unconfirmed)} one-way docs PR reference(s) (no "
-                "back-link, so not treated as a pair):",
+                f"Note: {len(unconfirmed)} one-way docs PR reference(s) (no back-link, so not treated as a pair):",
                 fg="yellow",
             )
             for code_pr, docs_pr in unconfirmed:
@@ -215,11 +210,12 @@ def _check_linked_docs_prs(version: Version):
         # code PRs separately rather than the pairs.
         docs_count = len({docs_pr.number for _, docs_pr in unmerged})
         code_count = len({code_pr.number for code_pr, _ in unmerged})
-        gprint(click.style(
-            f"Error: Found {docs_count} unmerged docs PR(s) for {code_count} "
-            "PR(s) in this release:",
-            fg="red",
-        ))
+        gprint(
+            click.style(
+                f"Error: Found {docs_count} unmerged docs PR(s) for {code_count} PR(s) in this release:",
+                fg="red",
+            )
+        )
         for code_pr, docs_pr in unmerged:
             gprint(
                 f"  - esphome#{code_pr.number} {code_pr.title}\n"
@@ -228,8 +224,7 @@ def _check_linked_docs_prs(version: Version):
 
         choice = click.prompt(
             click.style(
-                "[y] check again, [i] ignore (cut anyway, docs land later), "
-                "[n] abort",
+                "[y] check again, [i] ignore (cut anyway, docs land later), [n] abort",
                 fg="yellow",
             ),
             type=click.Choice(["y", "i", "n"]),
@@ -241,12 +236,9 @@ def _check_linked_docs_prs(version: Version):
         if choice == "i":
             # One code PR can reference several docs PRs, so dedupe the
             # numbers while keeping the order they were reported in.
-            numbers = ", ".join(
-                dict.fromkeys(f"esphome#{code_pr.number}" for code_pr, _ in unmerged)
-            )
+            numbers = ", ".join(dict.fromkeys(f"esphome#{code_pr.number}" for code_pr, _ in unmerged))
             gprint(
-                f"Ignoring {docs_count} unmerged docs PR(s); shipping "
-                f"{numbers} undocumented",
+                f"Ignoring {docs_count} unmerged docs PR(s); shipping {numbers} undocumented",
                 fg="yellow",
             )
             return
@@ -272,9 +264,7 @@ def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
     return ret
 
 
-def _strategy_merge_then_cherry_pick(
-    project: Project, version: Version, *, base: Branch, head: Branch
-):
+def _strategy_merge_then_cherry_pick(project: Project, version: Version, *, base: Branch, head: Branch):
     """Merge ``head`` into a fresh bump branch, then cherry-pick milestone stragglers.
 
     Used for the first full release: the merge brings in everything already on
@@ -354,7 +344,7 @@ def _docs_lint_failures() -> list[str]:
     step's base command, without the appended ignore arguments.
     """
     failed: list[str] = []
-    for base, command in zip(DOCS_LINT_COMMANDS, _docs_lint_commands()):
+    for base, command in zip(DOCS_LINT_COMMANDS, _docs_lint_commands(), strict=True):
         try:
             EsphomeDocsProject.run_command(*command, live=True)
         except EsphomeReleaseError:
@@ -390,12 +380,8 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 
     for proj in [EsphomeProject, EsphomeDocsProject]:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
-        if use_website_link_for_release(
-            version, is_primary_project=proj == EsphomeProject
-        ):
-            gprint(
-                f"Using website link for {proj.shortname} changelog (first beta/main release)"
-            )
+        if use_website_link_for_release(version, is_primary_project=proj == EsphomeProject):
+            gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
             changelog_md = changelog_website_url(version)
         else:
             changelog_md = changelog.generate(
@@ -413,16 +399,10 @@ def _create_prs(*, version: Version, base: Version, target_branch: BranchType):
 
             # If changelog is too long, replace with a link to website
             if changelog_too_long(changelog_md):
-                gprint(
-                    f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
-                )
+                gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
                 changelog_md = changelog_website_url(version)
 
-        body = (
-            "**Do not merge, release script will automatically merge**\n"
-            + changelog_md
-            + METADATA_MD
-        )
+        body = "**Do not merge, release script will automatically merge**\n" + changelog_md + METADATA_MD
         with proj.workon(branch_name):
             proj.create_pr(title=str(version), target_branch=target_branch, body=body)
 
@@ -510,9 +490,7 @@ def _close_previous_month_patch_milestones(version: Version):
                 and ms_version.beta == 0
                 and not ms_version.dev
             ):
-                gprint(
-                    f"Closing leftover patch milestone {milestone.title} for {proj.shortname}"
-                )
+                gprint(f"Closing leftover patch milestone {milestone.title} for {proj.shortname}")
                 milestone.update(state="closed")
 
 
@@ -574,8 +552,7 @@ def _prompt_base_version(version: Version) -> Version:
 
 
 BETA_NOTICE = (
-    "> [!NOTE]\n"
-    "> This is a beta release. Details on this page may change before the stable release is published."
+    "> [!NOTE]\n> This is a beta release. Details on this page may change before the stable release is published."
 )
 
 
@@ -695,9 +672,7 @@ MD013_DISABLE = "{/* markdownlint-disable MD013 */}"
 MD013_ENABLE = "{/* markdownlint-enable MD013 */}"
 
 
-def _insert_patch_section(
-    content: str, *, version: Version, changes: list[_DocsChange]
-) -> str:
+def _insert_patch_section(content: str, *, version: Version, changes: list[_DocsChange]) -> str:
     """Insert a patch release section into the cycle's blog post.
 
     Patch sections sit in a markdownlint-disabled region right before the
@@ -721,9 +696,7 @@ def _insert_patch_section(
         return content.replace(MD013_ENABLE, f"{section}\n\n{MD013_ENABLE}", 1)
     heading = next((h for h in BLOG_FULL_CHANGES_HEADINGS if h in content), None)
     if heading is None:
-        raise EsphomeReleaseError(
-            f"Cannot find '{BLOG_FULL_CHANGES_HEADINGS[0]}' in the blog post"
-        )
+        raise EsphomeReleaseError(f"Cannot find '{BLOG_FULL_CHANGES_HEADINGS[0]}' in the blog post")
     return content.replace(
         heading,
         f"{MD013_DISABLE}\n\n{section}\n\n{MD013_ENABLE}\n\n{heading}",
@@ -792,21 +765,12 @@ def _new_component_table_lines(base: Version) -> list[str]:
     the page so the block gets curated by hand.
     """
     try:
-        diff = EsphomeDocsProject.run_git(
-            "diff", f"{base}...HEAD", "--", COMPONENTS_INDEX, fail_ok=True
-        ).decode()
+        diff = EsphomeDocsProject.run_git("diff", f"{base}...HEAD", "--", COMPONENTS_INDEX, fail_ok=True).decode()
     except EsphomeReleaseError:
-        gprint(
-            f"Could not diff {COMPONENTS_INDEX} against {base}, "
-            "please fill in the featured components manually"
-        )
+        gprint(f"Could not diff {COMPONENTS_INDEX} against {base}, please fill in the featured components manually")
         return []
 
-    removed = {
-        line[1:].strip()
-        for line in diff.split("\n")
-        if line.startswith("-") and not line.startswith("---")
-    }
+    removed = {line[1:].strip() for line in diff.split("\n") if line.startswith("-") and not line.startswith("---")}
     seen: set[str] = set()
     rows: list[str] = []
     for line in diff.split("\n"):
@@ -846,9 +810,7 @@ def _find_blog_post(version: Version) -> Path | None:
     Should the slug somehow exist under several dates, the newest wins,
     mirroring the docs repo's ``generate_release_notes.py``.
     """
-    matches = sorted(
-        (EsphomeDocsProject.path / BLOG_DIR).glob(f"*/*/*/{_blog_slug(version)}.mdx")
-    )
+    matches = sorted((EsphomeDocsProject.path / BLOG_DIR).glob(f"*/*/*/{_blog_slug(version)}.mdx"))
     return matches[-1] if matches else None
 
 
@@ -856,9 +818,7 @@ def _prompt_blog_date(version: Version) -> datetime.date:
     """The blog post's date: the release Wednesday, confirmed by the user."""
     default = release_date(version.major, version.minor)
     while True:
-        raw = click.prompt(
-            "Blog post date (the release Wednesday)", default=default.isoformat()
-        )
+        raw = click.prompt("Blog post date (the release Wednesday)", default=default.isoformat())
         try:
             return datetime.date.fromisoformat(raw)
         except ValueError:
@@ -871,9 +831,7 @@ BLOG_TEMPLATE = Path("script/blog_post_template.mdx")
 _IMG_TABLE_OPEN = "<ImgTable items={[\n"
 
 
-def _render_blog_post(
-    version: Version, *, date: datetime.date, featured: list[str]
-) -> str:
+def _render_blog_post(version: Version, *, date: datetime.date, featured: list[str]) -> str:
     """Fill the docs repo's blog post template for this cycle.
 
     The template (``script/blog_post_template.mdx`` in the docs checkout)
@@ -885,9 +843,7 @@ def _render_blog_post(
     """
     template_path = EsphomeDocsProject.path / BLOG_TEMPLATE
     if not template_path.exists():
-        raise EsphomeReleaseError(
-            f"Blog post template {BLOG_TEMPLATE} not found in the docs checkout"
-        )
+        raise EsphomeReleaseError(f"Blog post template {BLOG_TEMPLATE} not found in the docs checkout")
     stable = version.replace(patch=0, beta=0, dev=False)
     content = template_path.read_text()
     tokens = {
@@ -903,8 +859,7 @@ def _render_blog_post(
             content = content.replace(_IMG_TABLE_OPEN, _IMG_TABLE_OPEN + rows, 1)
         else:
             gprint(
-                "Featured components table not found in the blog post template, "
-                "please add the drafted rows manually"
+                "Featured components table not found in the blog post template, please add the drafted rows manually"
             )
     return content
 
@@ -985,9 +940,7 @@ def _generate_release_notes(version: Version) -> None:
     _run_docs_command(RELEASE_NOTES_SCRIPT, str(stable), "--assemble", "--blog-only")
 
 
-def _docs_update_blog_post(
-    *, version: Version, base: Version
-) -> tuple[str | None, Path | None]:
+def _docs_update_blog_post(*, version: Version, base: Version) -> tuple[str | None, Path | None]:
     """Create or refresh the cycle's release notes blog post.
 
     The first beta creates the skeleton (the date defaults to the release
@@ -1022,12 +975,7 @@ def _docs_update_blog_post(
                 gprint(f"No release notes blog post for {version}, skipping")
                 return None, None
             date = _prompt_blog_date(version)
-            path = (
-                EsphomeDocsProject.path
-                / BLOG_DIR
-                / f"{date:%Y/%m/%d}"
-                / f"{_blog_slug(version)}.mdx"
-            )
+            path = EsphomeDocsProject.path / BLOG_DIR / f"{date:%Y/%m/%d}" / f"{_blog_slug(version)}.mdx"
             path.parent.mkdir(parents=True, exist_ok=True)
             featured = _new_component_table_lines(base)
             path.write_text(_render_blog_post(version, date=date, featured=featured))
@@ -1053,10 +1001,7 @@ def _docs_update_blog_post(
             patched = _insert_patch_section(content, version=version, changes=changes)
             review = review or patched != content
             content = patched
-        if version.beta:
-            content = _with_beta_notice(content)
-        else:
-            content = _without_beta_notice(content)
+        content = _with_beta_notice(content) if version.beta else _without_beta_notice(content)
         path.write_text(content)
 
         # The docs repo derives blog_url in data/version.json from the newest
@@ -1089,14 +1034,7 @@ def _render_changelog_page(changelog_version: Version, blog_url: str) -> str:
 def _changelog_page_path(version: Version) -> Path:
     """Path of the cycle's changelog page (always the ``.0`` stable name)."""
     changelog_version = version.replace(patch=0, beta=0, dev=False)
-    return (
-        EsphomeDocsProject.path
-        / "src"
-        / "content"
-        / "docs"
-        / "changelog"
-        / f"{changelog_version}.mdx"
-    )
+    return EsphomeDocsProject.path / "src" / "content" / "docs" / "changelog" / f"{changelog_version}.mdx"
 
 
 def _ensure_changelog_page(*, version: Version, blog_url: str | None) -> bool:
@@ -1110,9 +1048,7 @@ def _ensure_changelog_page(*, version: Version, blog_url: str | None) -> bool:
     if path.exists():
         return False
     if blog_url is None:
-        raise EsphomeReleaseError(
-            "Cannot create the changelog page without a release notes blog post"
-        )
+        raise EsphomeReleaseError("Cannot create the changelog page without a release notes blog post")
     changelog_version = version.replace(patch=0, beta=0, dev=False)
     path.write_text(_render_changelog_page(changelog_version, blog_url))
     return True
@@ -1133,9 +1069,7 @@ def _docs_insert_changelog(*, version: Version, base: Version):
             if blog_review is not None:
                 open_vscode(str(blog_review))
                 confirm("Does the release notes blog post look correct?")
-            EsphomeDocsProject.commit(
-                f"Update release notes blog post for {version}", ignore_empty=True
-            )
+            EsphomeDocsProject.commit(f"Update release notes blog post for {version}", ignore_empty=True)
         return
     with EsphomeDocsProject.workon(branch_name):
         changelog_path = _changelog_page_path(version)
@@ -1254,17 +1188,11 @@ def cut_release(version: Version) -> Version:
     if version.patch == 0:
         gprint("Creating first release version using merge + cherry-pick")
         for proj in [EsphomeProject, EsphomeDocsProject]:
-            cherry_picked.extend(
-                _strategy_merge_then_cherry_pick(
-                    proj, version, base=Branch.STABLE, head=Branch.BETA
-                )
-            )
+            cherry_picked.extend(_strategy_merge_then_cherry_pick(proj, version, base=Branch.STABLE, head=Branch.BETA))
     else:
         gprint("Creating next full release using cherry-pick")
         for proj in [EsphomeProject, EsphomeDocsProject]:
-            cherry_picked.extend(
-                _strategy_cherry_pick(proj, version, base=Branch.STABLE)
-            )
+            cherry_picked.extend(_strategy_cherry_pick(proj, version, base=Branch.STABLE))
     _docs_insert_changelog(version=version, base=base)
     _docs_update_supporters(version=version)
 
@@ -1276,14 +1204,10 @@ def cut_release(version: Version) -> Version:
 
 
 def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
-    prs = proj.get_pr_by_title(
-        title=str(version), head=_bump_branch_name(version), base=head_branch
-    )
+    prs = proj.get_pr_by_title(title=str(version), head=_bump_branch_name(version), base=head_branch)
     release_pr = None
     if not prs:
-        confirm(
-            f"No release PRs found for {proj.shortname}, please verify it has been merged."
-        )
+        confirm(f"No release PRs found for {proj.shortname}, please verify it has been merged.")
     elif len(prs) == 1:
         release_pr = prs[0]
     else:
@@ -1295,7 +1219,7 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
             int(
                 click.prompt(
                     f"Please select release PR for {proj.shortname}",
-                    type=click.Choice([i + 1 for i in range(len(prs))]),
+                    type=click.Choice([str(i + 1) for i in range(len(prs) + 1)]),
                 )
             )
             - 1
@@ -1322,12 +1246,8 @@ def _publish_release(
         confirm(f"Publish version {version}?")
     for proj in projects:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
-        if use_website_link_for_release(
-            version, is_primary_project=proj == EsphomeProject
-        ):
-            gprint(
-                f"Using website link for {proj.shortname} changelog (first beta/main release)"
-            )
+        if use_website_link_for_release(version, is_primary_project=proj == EsphomeProject):
+            gprint(f"Using website link for {proj.shortname} changelog (first beta/main release)")
             changelog_md = changelog_website_url(version)
         else:
             changelog_md = changelog.generate(
@@ -1343,9 +1263,7 @@ def _publish_release(
 
             # If changelog is too long, replace with a link to website
             if changelog_too_long(changelog_md):
-                gprint(
-                    f"Changelog too long ({len(changelog_md)} chars), replacing with website link"
-                )
+                gprint(f"Changelog too long ({len(changelog_md)} chars), replacing with website link")
                 changelog_md = changelog_website_url(version)
 
         _merge_release_pr(proj=proj, version=version, head_branch=head_branch)

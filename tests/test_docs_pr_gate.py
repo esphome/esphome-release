@@ -22,8 +22,9 @@ lists so tests can assert no extra API calls were made.
 import importlib
 import json
 import types
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 import click
 import pytest
@@ -61,9 +62,7 @@ def modules(tmp_path, monkeypatch):
     return cutting_mod
 
 
-MILESTONE = types.SimpleNamespace(
-    title="2026.7.0", number=5, closed_issues=2, open_issues=0
-)
+MILESTONE = types.SimpleNamespace(title="2026.7.0", number=5, closed_issues=2, open_issues=0)
 
 VERSION = Version.parse("2026.7.0b2")
 
@@ -79,10 +78,7 @@ def _back_link(docs_number: int) -> str:
 
 def _docs_body(code_number: int) -> str:
     """A docs PR body filled in with the code PR it pairs with."""
-    return (
-        "**Pull request in esphome with YAML changes (if applicable):**\n"
-        f"- esphome/esphome#{code_number}\n"
-    )
+    return f"**Pull request in esphome with YAML changes (if applicable):**\n- esphome/esphome#{code_number}\n"
 
 
 class FakeLabel:
@@ -93,7 +89,7 @@ class FakeLabel:
 class FakeIssue:
     """A merged PR as it appears in the milestone issue listing."""
 
-    def __init__(self, number: int, labels: Optional[List[str]] = None):
+    def __init__(self, number: int, labels: list[str] | None = None):
         self.number = number
         self.original_labels = [FakeLabel(name) for name in labels or []]
         self.pull_request_urls = {"merged_at": "2026-07-01T00:00:00Z"}
@@ -106,7 +102,7 @@ class FakePull:
         *,
         body: str = "",
         title: str = "title",
-        merged_at: Optional[datetime] = None,
+        merged_at: datetime | None = None,
         repo: str = "esphome",
     ):
         self.number = number
@@ -120,21 +116,21 @@ class FakeRepo:
     def __init__(
         self,
         *,
-        milestones: Optional[list] = None,
-        closed_issues: Optional[List[FakeIssue]] = None,
-        pulls: Optional[dict] = None,
+        milestones: list | None = None,
+        closed_issues: list[FakeIssue] | None = None,
+        pulls: dict | None = None,
     ):
         self._milestones = milestones or []
         self._closed_issues = closed_issues or []
         self._pulls = pulls or {}
-        self.pull_request_calls: List[int] = []
-        self.issues_calls: List[tuple] = []
+        self.pull_request_calls: list[int] = []
+        self.issues_calls: list[tuple] = []
 
     def milestones(self, state: str) -> list:
         assert state == "open"
         return self._milestones
 
-    def issues(self, *, milestone: int, state: str) -> List[FakeIssue]:
+    def issues(self, *, milestone: int, state: str) -> list[FakeIssue]:
         self.issues_calls.append((milestone, state))
         return self._closed_issues
 
@@ -153,24 +149,18 @@ def _wire(cutting, *, code_repo: FakeRepo, docs_repo: FakeRepo) -> None:
 
 def _no_confirm(monkeypatch) -> None:
     """Fail the test if either prompt style is invoked."""
-    monkeypatch.setattr(
-        click, "confirm", lambda *a, **k: pytest.fail("should not prompt (confirm)")
-    )
-    monkeypatch.setattr(
-        click, "prompt", lambda *a, **k: pytest.fail("should not prompt (prompt)")
-    )
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: pytest.fail("should not prompt (confirm)"))
+    monkeypatch.setattr(click, "prompt", lambda *a, **k: pytest.fail("should not prompt (prompt)"))
 
 
-def _make_prompt(
-    *answers: str, on_call: Optional[Callable[[], None]] = None
-) -> tuple[Callable[..., str], List[tuple]]:
+def _make_prompt(*answers: str, on_call: Callable[[], None] | None = None) -> tuple[Callable[..., str], list[tuple]]:
     """A fake ``click.prompt`` returning ``answers`` in turn, recording its calls.
 
     Each call appends ``(text, kwargs)`` to the returned list. ``on_call`` runs
     before the answer is returned, e.g. to merge a docs PR mid-prompt. Asking
     more times than there are answers fails the test.
     """
-    calls: List[tuple] = []
+    calls: list[tuple] = []
     remaining = list(answers)
 
     def prompt(text: str, **kwargs: Any) -> str:
@@ -198,9 +188,7 @@ def test_no_cycle_milestone_passes_without_touching_repos(modules, monkeypatch, 
     assert docs_repo.pull_request_calls == []
 
 
-def test_code_prs_without_docs_links_pass_without_docs_lookups(
-    modules, monkeypatch, capsys
-):
+def test_code_prs_without_docs_links_pass_without_docs_lookups(modules, monkeypatch, capsys):
     """A code PR with an unfilled template placeholder links no docs PR, so the
     docs repo is never queried."""
     cutting = modules
@@ -231,9 +219,7 @@ def test_merged_docs_pr_passes(modules, monkeypatch, capsys):
     code_repo = FakeRepo(
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(100)],
-        pulls={
-            100: FakePull(100, merged_at=datetime(2026, 7, 1), body=_back_link(7071))
-        },
+        pulls={100: FakePull(100, merged_at=datetime(2026, 7, 1), body=_back_link(7071))},
     )
     docs_repo = FakeRepo(
         pulls={
@@ -280,11 +266,7 @@ def test_one_way_reference_is_reported_but_does_not_block(modules, monkeypatch, 
     code_repo = FakeRepo(
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(14255)],
-        pulls={
-            14255: FakePull(
-                14255, merged_at=datetime(2026, 7, 1), body=_back_link(6676)
-            )
-        },
+        pulls={14255: FakePull(14255, merged_at=datetime(2026, 7, 1), body=_back_link(6676))},
     )
     docs_repo = FakeRepo(
         pulls={
@@ -341,7 +323,8 @@ def test_unmerged_docs_pr_blocks_then_passes_on_recheck(modules, monkeypatch, ca
 
     cutting._check_linked_docs_prs(VERSION)
 
-    assert len(calls) == 1 and "[y] check again" in calls[0][0]
+    assert len(calls) == 1
+    assert "[y] check again" in calls[0][0]
     # Both passes re-fetched instead of reusing the stale cached payloads.
     assert code_repo.pull_request_calls == [17797, 17797]
     assert docs_repo.pull_request_calls == [7071, 7071]
@@ -358,15 +341,9 @@ def test_unmerged_docs_pr_declining_recheck_aborts(modules, monkeypatch, capsys)
     code_repo = FakeRepo(
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(17797)],
-        pulls={
-            17797: FakePull(
-                17797, merged_at=datetime(2026, 7, 1), body=_back_link(7071)
-            )
-        },
+        pulls={17797: FakePull(17797, merged_at=datetime(2026, 7, 1), body=_back_link(7071))},
     )
-    docs_repo = FakeRepo(
-        pulls={7071: FakePull(7071, body=_docs_body(17797), repo="esphome.io")}
-    )
+    docs_repo = FakeRepo(pulls={7071: FakePull(7071, body=_docs_body(17797), repo="esphome.io")})
     _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
     prompt, calls = _make_prompt("n")
     monkeypatch.setattr(click, "prompt", prompt)
@@ -384,15 +361,9 @@ def test_shared_docs_pr_counted_once(modules, monkeypatch, capsys):
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(20347), FakeIssue(20348), FakeIssue(20350)],
         pulls={
-            20347: FakePull(
-                20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
-            ),
-            20348: FakePull(
-                20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
-            ),
-            20350: FakePull(
-                20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)
-            ),
+            20347: FakePull(20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)),
+            20348: FakePull(20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)),
+            20350: FakePull(20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)),
         },
     )
     docs_repo = FakeRepo(
@@ -426,12 +397,8 @@ def test_blocking_and_unconfirmed_reported_together(modules, monkeypatch, capsys
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(17797), FakeIssue(14255)],
         pulls={
-            17797: FakePull(
-                17797, merged_at=datetime(2026, 7, 1), body=_back_link(7071)
-            ),
-            14255: FakePull(
-                14255, merged_at=datetime(2026, 7, 2), body=_back_link(6676)
-            ),
+            17797: FakePull(17797, merged_at=datetime(2026, 7, 1), body=_back_link(7071)),
+            14255: FakePull(14255, merged_at=datetime(2026, 7, 2), body=_back_link(6676)),
         },
     )
     docs_repo = FakeRepo(
@@ -457,11 +424,7 @@ def _unmerged_single(cutting, number: int = 17797, docs_number: int = 7071):
     code_repo = FakeRepo(
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(number)],
-        pulls={
-            number: FakePull(
-                number, merged_at=datetime(2026, 7, 1), body=_back_link(docs_number)
-            )
-        },
+        pulls={number: FakePull(number, merged_at=datetime(2026, 7, 1), body=_back_link(docs_number))},
     )
     docs_pull = FakePull(docs_number, body=_docs_body(number), repo="esphome.io")
     docs_repo = FakeRepo(pulls={docs_number: docs_pull})
@@ -546,22 +509,14 @@ def test_ignore_lists_every_code_pr_in_order(modules, monkeypatch, capsys):
         milestones=[MILESTONE],
         closed_issues=[FakeIssue(20347), FakeIssue(20348), FakeIssue(20350)],
         pulls={
-            20347: FakePull(
-                20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
-            ),
-            20348: FakePull(
-                20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
-            ),
-            20350: FakePull(
-                20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)
-            ),
+            20347: FakePull(20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)),
+            20348: FakePull(20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)),
+            20350: FakePull(20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)),
         },
     )
     docs_repo = FakeRepo(
         pulls={
-            7564: FakePull(
-                7564, body=_docs_body(20347) + _docs_body(20348), repo="esphome.io"
-            ),
+            7564: FakePull(7564, body=_docs_body(20347) + _docs_body(20348), repo="esphome.io"),
             7565: FakePull(7565, body=_docs_body(20350), repo="esphome.io"),
         }
     )
@@ -572,10 +527,7 @@ def test_ignore_lists_every_code_pr_in_order(modules, monkeypatch, capsys):
     cutting._check_linked_docs_prs(VERSION)
 
     out = capsys.readouterr().out
-    assert (
-        "Ignoring 2 unmerged docs PR(s); shipping "
-        "esphome#20347, esphome#20348, esphome#20350 undocumented"
-    ) in out
+    assert ("Ignoring 2 unmerged docs PR(s); shipping esphome#20347, esphome#20348, esphome#20350 undocumented") in out
 
 
 def test_ignore_on_second_pass_after_checking_again(modules, monkeypatch, capsys):
@@ -612,27 +564,19 @@ def _stub_cut(cutting, monkeypatch, order: list) -> None:
     ):
         monkeypatch.setattr(cutting, name, lambda *a, **k: [])
 
-    monkeypatch.setattr(
-        cutting, "_prompt_base_version", lambda *a, **k: Version.parse("2026.6.0")
-    )
-    monkeypatch.setattr(
-        cutting, "_check_linked_docs_prs", lambda v: order.append(("check", v))
-    )
-    monkeypatch.setattr(
-        cutting, "update_local_copies", lambda: order.append(("update", None))
-    )
+    monkeypatch.setattr(cutting, "_prompt_base_version", lambda *a, **k: Version.parse("2026.6.0"))
+    monkeypatch.setattr(cutting, "_check_linked_docs_prs", lambda v: order.append(("check", v)))
+    monkeypatch.setattr(cutting, "update_local_copies", lambda: order.append(("update", None)))
 
 
 @pytest.mark.parametrize(
-    "cut, version_str",
+    ("cut", "version_str"),
     [
         ("cut_beta_release", "2026.7.0b2"),
         ("cut_release", "2026.7.1"),
     ],
 )
-def test_cut_checks_docs_prs_before_touching_local_copies(
-    modules, monkeypatch, cut, version_str
-):
+def test_cut_checks_docs_prs_before_touching_local_copies(modules, monkeypatch, cut, version_str):
     """Both entry points gate on docs PRs before any local repo is touched."""
     cutting = modules
     order = []

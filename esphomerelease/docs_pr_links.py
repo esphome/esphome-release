@@ -37,7 +37,7 @@ _DOCS_PULL_URL_RE = re.compile(r"github\.com/esphome/esphome(?:\.io|-docs)/pull/
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _extract(body: str, patterns: list[re.Pattern]) -> list[int]:
+def _extract(body: str | None, patterns: list[re.Pattern]) -> list[int]:
     """Collect the PR numbers matched by ``patterns`` in ``body``.
 
     Markdown links are collapsed to their destination URL first, so display text
@@ -57,7 +57,7 @@ def _extract(body: str, patterns: list[re.Pattern]) -> list[int]:
     return sorted(pr_numbers)
 
 
-def extract_esphome_pr_numbers(body: str) -> list[int]:
+def extract_esphome_pr_numbers(body: str | None) -> list[int]:
     """Extract referenced ``esphome/esphome`` PR numbers from a docs PR body.
 
     Returns a sorted, de-duplicated list of PR numbers. Display text inside
@@ -68,7 +68,7 @@ def extract_esphome_pr_numbers(body: str) -> list[int]:
     return _extract(body, [_SHORTHAND_RE, _PULL_URL_RE])
 
 
-def extract_docs_pr_numbers(body: str) -> list[int]:
+def extract_docs_pr_numbers(body: str | None) -> list[int]:
     """Extract referenced ``esphome/esphome.io`` PR numbers from a code PR body.
 
     The counterpart of :func:`extract_esphome_pr_numbers`, scanning a PR body in
@@ -81,9 +81,7 @@ def extract_docs_pr_numbers(body: str) -> list[int]:
     return _extract(body, [_DOCS_SHORTHAND_RE, _DOCS_PULL_URL_RE])
 
 
-def is_confirmed_pair(
-    *, docs_body: str, docs_number: int, code_body: str, code_number: int
-) -> bool:
+def is_confirmed_pair(*, docs_body: str | None, docs_number: int, code_body: str | None, code_number: int) -> bool:
     """Whether a docs PR and a code PR genuinely reference each other.
 
     A PR body can mention the other repo's PR in passing prose ("replaces the

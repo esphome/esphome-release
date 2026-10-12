@@ -41,7 +41,7 @@ class DocsPR:
 def run_gh_command(args: list[str]) -> str:
     """Run a gh CLI command and return the output."""
     result = subprocess.run(
-        ["gh"] + args,
+        ["gh", *args],
         capture_output=True,
         text=True,
         check=True,
@@ -99,7 +99,7 @@ def fetch_linked_pr_states(pr_numbers: list[int]) -> dict[int, LinkedPR | None]:
     if not pr_numbers:
         return {}
     with ThreadPoolExecutor(max_workers=min(16, len(pr_numbers))) as pool:
-        return dict(zip(pr_numbers, pool.map(get_esphome_pr_state, pr_numbers)))
+        return dict(zip(pr_numbers, pool.map(get_esphome_pr_state, pr_numbers), strict=True))
 
 
 def _print_linked_pr(linked: LinkedPR) -> None:
@@ -115,14 +115,11 @@ def main():
     print(f"Found {len(docs_prs)} open PRs\n")
 
     linked_numbers: dict[int, list[int]] = {
-        pr["number"]: extract_esphome_pr_numbers(pr.get("body", ""))
-        for pr in docs_prs
+        pr["number"]: extract_esphome_pr_numbers(pr.get("body", "")) for pr in docs_prs
     }
     # Several docs PRs may reference the same esphome PR; fetch each unique
     # number once, in parallel, instead of serially per reference.
-    linked_states = fetch_linked_pr_states(
-        sorted({num for nums in linked_numbers.values() for num in nums})
-    )
+    linked_states = fetch_linked_pr_states(sorted({num for nums in linked_numbers.values() for num in nums}))
 
     flagged_prs: list[DocsPR] = []
 

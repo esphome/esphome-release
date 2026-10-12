@@ -53,12 +53,8 @@ def commands(tmp_path, monkeypatch):
 def cut_calls(commands, monkeypatch):
     """Record the versions ``cut`` hands to the cutting module."""
     calls = []
-    monkeypatch.setattr(
-        commands.cutting, "cut_beta_release", lambda v: calls.append(("beta", v))
-    )
-    monkeypatch.setattr(
-        commands.cutting, "cut_release", lambda v: calls.append(("stable", v))
-    )
+    monkeypatch.setattr(commands.cutting, "cut_beta_release", lambda v: calls.append(("beta", v)))
+    monkeypatch.setattr(commands.cutting, "cut_release", lambda v: calls.append(("stable", v)))
     monkeypatch.setattr(commands, "_commit_user_cache_if_changed", lambda: None)
     return calls
 
@@ -111,9 +107,7 @@ def _set_latest(commands, monkeypatch, latest: str) -> None:
         ("2026.8.0b4", "2026.7.3", "2026.7.3"),
     ],
 )
-def test_cut_resolves_version(
-    commands, cut_calls, monkeypatch, latest, argument, expected
-):
+def test_cut_resolves_version(commands, cut_calls, monkeypatch, latest, argument, expected):
     from esphomerelease.model import Version
 
     _set_latest(commands, monkeypatch, latest)
@@ -166,9 +160,7 @@ def test_cut_invalid_version(commands, cut_calls, monkeypatch):
         ("2026.8.1", "2026.9.0b1", "2026.9.0b1"),
     ],
 )
-def test_publish_resolves_version(
-    commands, publish_calls, monkeypatch, latest, argument, expected
-):
+def test_publish_resolves_version(commands, publish_calls, monkeypatch, latest, argument, expected):
     from esphomerelease.model import Version
 
     _set_latest(commands, monkeypatch, latest)

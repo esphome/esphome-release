@@ -14,7 +14,6 @@ import importlib
 import json
 import types
 from datetime import datetime
-from typing import List, Optional
 
 import pytest
 from click.testing import CliRunner
@@ -78,22 +77,22 @@ class FakeIssue:
     def __init__(
         self,
         number: int,
-        labels: Optional[List[str]] = None,
+        labels: list[str] | None = None,
         *,
         pr: bool = False,
-        merged_at: Optional[str] = None,
+        merged_at: str | None = None,
         title: str = "title",
     ):
         self.number = number
         self.title = title
         self.original_labels = [FakeLabel(name) for name in labels or []]
-        self.pull_request_urls: Optional[dict] = None
+        self.pull_request_urls: dict | None = None
         if pr:
             self.pull_request_urls = {
                 "html_url": f"https://github.com/esphome/esphome/pull/{number}",
                 "merged_at": merged_at,
             }
-        self.milestone_edits: List[int] = []
+        self.milestone_edits: list[int] = []
 
     def edit(self, *, milestone: int) -> None:
         self.milestone_edits.append(milestone)
@@ -105,9 +104,9 @@ class FakePull:
         number: int,
         *,
         title: str = "title",
-        merged_at: Optional[datetime] = None,
+        merged_at: datetime | None = None,
         login: str = "alice",
-        merge_commit_sha: Optional[str] = None,
+        merge_commit_sha: str | None = None,
     ):
         self.number = number
         self.title = title
@@ -121,24 +120,22 @@ class FakeShortPull:
     """A closed PR as it appears in the repo-wide ``pull_requests`` listing the
     drift-recovery scan walks: a number plus the PR's own milestone (or None)."""
 
-    def __init__(self, number: int, milestone_number: Optional[int] = None):
+    def __init__(self, number: int, milestone_number: int | None = None):
         self.number = number
         # github3's ShortPullRequest leaves milestone as the raw JSON dict.
-        self.milestone = (
-            {"number": milestone_number} if milestone_number is not None else None
-        )
+        self.milestone = {"number": milestone_number} if milestone_number is not None else None
 
 
 class FakeRepo:
     def __init__(
         self,
         *,
-        milestones: Optional[list] = None,
-        closed_issues: Optional[List[FakeIssue]] = None,
-        open_issues: Optional[List[FakeIssue]] = None,
-        pulls: Optional[dict] = None,
-        pull_listing: Optional[List[FakeShortPull]] = None,
-        issues_by_number: Optional[dict] = None,
+        milestones: list | None = None,
+        closed_issues: list[FakeIssue] | None = None,
+        open_issues: list[FakeIssue] | None = None,
+        pulls: dict | None = None,
+        pull_listing: list[FakeShortPull] | None = None,
+        issues_by_number: dict | None = None,
     ):
         self._milestones = milestones or []
         self._issues = {
@@ -148,14 +145,14 @@ class FakeRepo:
         self._pulls = pulls or {}
         self._pull_listing = pull_listing or []
         self._issues_by_number = issues_by_number or {}
-        self.pull_request_calls: List[int] = []
-        self.pull_requests_calls: List[tuple] = []
+        self.pull_request_calls: list[int] = []
+        self.pull_requests_calls: list[tuple] = []
 
     def milestones(self, state: str) -> list:
         assert state == "open"
         return self._milestones
 
-    def issues(self, *, milestone: int, state: str) -> List[FakeIssue]:
+    def issues(self, *, milestone: int, state: str) -> list[FakeIssue]:
         return self._issues[state]
 
     def pull_request(self, number: int) -> FakePull:
@@ -173,9 +170,7 @@ class FakeRepo:
         return self._issues_by_number[number]
 
 
-MILESTONE = types.SimpleNamespace(
-    title="2026.7.0", number=5, closed_issues=5, open_issues=0
-)
+MILESTONE = types.SimpleNamespace(title="2026.7.0", number=5, closed_issues=5, open_issues=0)
 
 
 def test_get_next_beta_prs_no_milestone(modules, tmp_path):
@@ -198,9 +193,7 @@ def test_get_next_beta_prs_filters_and_sorts(modules, tmp_path):
         closed_issues=[
             FakeIssue(1),  # plain issue, not a PR
             FakeIssue(2, pr=True),  # closed but unmerged PR
-            FakeIssue(
-                3, labels=["cherry-picked"], pr=True, merged_at="2026-07-01T00:00:00Z"
-            ),  # already picked
+            FakeIssue(3, labels=["cherry-picked"], pr=True, merged_at="2026-07-01T00:00:00Z"),  # already picked
             FakeIssue(4, pr=True, merged_at="2026-07-02T00:00:00Z"),
             FakeIssue(5, pr=True, merged_at="2026-07-01T00:00:00Z"),
         ],
@@ -306,9 +299,7 @@ def test_cherry_pick_from_milestone_no_milestone(modules, tmp_path):
     assert proj.cherry_pick_from_milestone(None) == []
 
 
-def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
-    modules, tmp_path, monkeypatch, capsys
-):
+def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(modules, tmp_path, monkeypatch, capsys):
     """Plain issues are skipped, unmerged PRs prompt, cherry-picked PRs are
     dropped silently, and the rest are picked sorted by merge time."""
     import click
@@ -352,7 +343,8 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
     assert picked_shas == ["sha5", "sha4"]
     # Only the actually-picked PRs were fetched from the API.
     assert sorted(repo.pull_request_calls) == [4, 5]
-    assert len(prompts) == 2 and "Unmerged PR" in prompts[0]
+    assert len(prompts) == 2
+    assert "Unmerged PR" in prompts[0]
     # The already-picked PR produces no output at all.
     out = capsys.readouterr().out
     assert picked.title not in out
@@ -360,9 +352,7 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(
 
 
 def _milestone(*, closed_issues: int, open_issues: int = 0) -> types.SimpleNamespace:
-    return types.SimpleNamespace(
-        title="2026.7.1", number=7, closed_issues=closed_issues, open_issues=open_issues
-    )
+    return types.SimpleNamespace(title="2026.7.1", number=7, closed_issues=closed_issues, open_issues=open_issues)
 
 
 def _capture_subshell(proj, monkeypatch) -> list:
@@ -418,9 +408,7 @@ def test_find_drifted_milestone_prs_no_shortfall(modules, tmp_path):
     assert proj._repo.pull_requests_calls == []
 
 
-def test_resolve_drift_spawns_shell_with_cherry_pick_commands(
-    modules, tmp_path, monkeypatch
-):
+def test_resolve_drift_spawns_shell_with_cherry_pick_commands(modules, tmp_path, monkeypatch):
     """A shortfall prints the missing PR with a ready cherry-pick command and
     drops into the manual-fix subshell; the identified PR is returned so the
     caller still labels it cherry-picked."""
@@ -475,9 +463,7 @@ def test_resolve_drift_partial_identification_warns(modules, tmp_path, monkeypat
     assert "only identified 1 of 2" in body
 
 
-def test_cherry_pick_from_milestone_hands_drift_to_shell(
-    modules, tmp_path, monkeypatch
-):
+def test_cherry_pick_from_milestone_hands_drift_to_shell(modules, tmp_path, monkeypatch):
     """End to end: index-listed PRs are auto-picked; a dropped PR is left for the
     user in the subshell (not auto-picked) but still returned for labeling."""
     project_mod, _ = modules
@@ -523,7 +509,8 @@ def test_remove_merged_prs_from_milestone(modules, tmp_path):
 
     assert proj.remove_merged_prs_from_milestone(MILESTONE) == [merged]
     assert merged.milestone_edits == [0]
-    assert plain.milestone_edits == [] and unmerged.milestone_edits == []
+    assert plain.milestone_edits == []
+    assert unmerged.milestone_edits == []
     assert repo.pull_request_calls == []
 
 

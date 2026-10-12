@@ -23,10 +23,7 @@ slug: "changelog/2026.7.0"
 ---
 """
 
-NOTICE = (
-    "> [!NOTE]\n"
-    "> This is a beta release. Details on this page may change before the stable release is published."
-)
+NOTICE = "> [!NOTE]\n> This is a beta release. Details on this page may change before the stable release is published."
 
 STABLE_PAGE = f"""\
 {FRONTMATTER}
@@ -85,13 +82,7 @@ def test_without_beta_notice_is_idempotent(cutting):
 
 
 def _changelog_page(cutting, version_str: str, content: str) -> Path:
-    changelog_dir = (
-        Path(cutting.EsphomeDocsProject.path)
-        / "src"
-        / "content"
-        / "docs"
-        / "changelog"
-    )
+    changelog_dir = Path(cutting.EsphomeDocsProject.path) / "src" / "content" / "docs" / "changelog"
     changelog_dir.mkdir(parents=True, exist_ok=True)
     page = changelog_dir / f"{version_str}.mdx"
     page.write_text(content)
@@ -139,10 +130,7 @@ LINE_LABELS = (
 
 def _line(pr: FakePR) -> str:
     """The changelog line ``format_change`` produces for a fake PR."""
-    line = (
-        f"- {pr.title} [esphome#{pr.number}]({pr.html_url})"
-        f" by [@someone](https://github.com/someone)"
-    )
+    line = f"- {pr.title} [esphome#{pr.number}]({pr.html_url}) by [@someone](https://github.com/someone)"
     for label in pr.labels:
         if label["name"] in LINE_LABELS:
             line += f" ({label['name']})"
@@ -171,15 +159,9 @@ def _run_docs_insert_changelog(cutting, monkeypatch, version, base, prs):
     opened = []
     confirmed = []
     fake = FakeProject(prs)
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "workon", lambda branch: contextlib.nullcontext()
-    )
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "commit", lambda msg, **k: commits.append(msg)
-    )
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "run_command", lambda *args, **k: b""
-    )
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "workon", lambda branch: contextlib.nullcontext())
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "commit", lambda msg, **k: commits.append(msg))
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "run_command", lambda *args, **k: b"")
     monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
     monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
     monkeypatch.setattr(cutting, "open_vscode", lambda *paths: opened.append(paths))
@@ -235,9 +217,7 @@ def test_render_changelog_page(cutting):
 def test_render_changelog_page_other_month(cutting):
     from esphomerelease.model import Version
 
-    page = cutting._render_changelog_page(
-        Version.parse("2026.8.0"), "/blog/2026/08/19/esphome-2026-8/"
-    )
+    page = cutting._render_changelog_page(Version.parse("2026.8.0"), "/blog/2026/08/19/esphome-2026-8/")
     assert 'title: "ESPHome 2026.8.0 - August 2026"' in page
     assert "[ESPHome 2026.8.0 release notes](/blog/2026/08/19/esphome-2026-8/)" in page
 
@@ -245,9 +225,7 @@ def test_render_changelog_page_other_month(cutting):
 def test_ensure_changelog_page_creates_skeleton(cutting, docs_git):
     from esphomerelease.model import Version
 
-    created = cutting._ensure_changelog_page(
-        version=Version.parse("2026.7.0b1"), blog_url=BLOG_URL
-    )
+    created = cutting._ensure_changelog_page(version=Version.parse("2026.7.0b1"), blog_url=BLOG_URL)
     assert created is True
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
     assert page.read_text() == RENDERED_PAGE
@@ -258,9 +236,7 @@ def test_ensure_changelog_page_noop_when_present(cutting, docs_git):
 
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
     page.write_text(BETA_PAGE)
-    created = cutting._ensure_changelog_page(
-        version=Version.parse("2026.7.0b2"), blog_url=None
-    )
+    created = cutting._ensure_changelog_page(version=Version.parse("2026.7.0b2"), blog_url=None)
     assert created is False
     assert page.read_text() == BETA_PAGE
 
@@ -271,9 +247,7 @@ def test_ensure_changelog_page_requires_blog_url(cutting, docs_git):
     from esphomerelease.model import Version
 
     with pytest.raises(EsphomeReleaseError, match="blog post"):
-        cutting._ensure_changelog_page(
-            version=Version.parse("2026.7.0b1"), blog_url=None
-        )
+        cutting._ensure_changelog_page(version=Version.parse("2026.7.0b1"), blog_url=None)
 
 
 B1_PRS = [
@@ -309,9 +283,7 @@ FULL_BLOCK = f"""\
 
 def _docs_change(cutting, pr: FakePR):
     labels = [label["name"] for label in pr.labels]
-    return cutting._DocsChange(
-        labels=labels, ref=f"[esphome#{pr.number}]", msg=_line(pr)
-    )
+    return cutting._DocsChange(labels=labels, ref=f"[esphome#{pr.number}]", msg=_line(pr))
 
 
 def test_render_full_changes_block(cutting):
@@ -320,44 +292,31 @@ def test_render_full_changes_block(cutting):
 
 
 def test_merge_changes_beta(cutting):
-    content = cutting._append_full_changes_block(
-        STABLE_PAGE, [_docs_change(cutting, pr) for pr in B1_PRS]
-    )
+    content = cutting._append_full_changes_block(STABLE_PAGE, [_docs_change(cutting, pr) for pr in B1_PRS])
     beta_fix = FakePR(10, "Fix beta bug")
     beta_dep = FakePR(11, "Bump dep2 from 1 to 2", ["dependencies"])
     new = [_docs_change(cutting, pr) for pr in (beta_fix, beta_dep, B1_PRS[1])]
 
     merged = cutting._merge_changes(content, new, beta=True)
     assert (
-        f"{{/* BETA_CHANGES_START */}}\n### Beta Changes\n\n"
-        f"{_line(beta_fix)}\n{{/* BETA_CHANGES_END */}}"
+        f"{{/* BETA_CHANGES_START */}}\n### Beta Changes\n\n{_line(beta_fix)}\n{{/* BETA_CHANGES_END */}}"
     ) in merged
     assert f"{_line(B1_PRS[1])}\n{_line(beta_fix)}\n{{/* ALL_CHANGES_END */}}" in merged
-    assert (
-        f"{_line(B1_PRS[2])}\n{_line(beta_dep)}\n{{/* DEPENDENCY_CHANGES_END */}}"
-    ) in merged
+    assert (f"{_line(B1_PRS[2])}\n{_line(beta_dep)}\n{{/* DEPENDENCY_CHANGES_END */}}") in merged
     # The already-present line was not added again.
     assert merged.count(_line(B1_PRS[1])) == 1
 
     # A later beta appends to the existing block without a second heading.
     later_fix = FakePR(12, "Another fix")
-    merged2 = cutting._merge_changes(
-        merged, [_docs_change(cutting, later_fix)], beta=True
-    )
+    merged2 = cutting._merge_changes(merged, [_docs_change(cutting, later_fix)], beta=True)
     assert merged2.count("### Beta Changes") == 1
-    assert (
-        f"{_line(beta_fix)}\n{_line(later_fix)}\n{{/* BETA_CHANGES_END */}}" in merged2
-    )
+    assert f"{_line(beta_fix)}\n{_line(later_fix)}\n{{/* BETA_CHANGES_END */}}" in merged2
 
 
 def test_merge_changes_stable_skips_beta_block(cutting):
-    content = cutting._append_full_changes_block(
-        STABLE_PAGE, [_docs_change(cutting, pr) for pr in B1_PRS]
-    )
+    content = cutting._append_full_changes_block(STABLE_PAGE, [_docs_change(cutting, pr) for pr in B1_PRS])
     straggler = FakePR(20, "Straggler fix")
-    merged = cutting._merge_changes(
-        content, [_docs_change(cutting, straggler)], beta=False
-    )
+    merged = cutting._merge_changes(content, [_docs_change(cutting, straggler)], beta=False)
     assert "### Beta Changes" not in merged
     assert f"{_line(straggler)}\n{{/* ALL_CHANGES_END */}}" in merged
 
@@ -372,15 +331,12 @@ def test_merge_changes_missing_marker_raises(cutting):
     from esphomerelease.exceptions import EsphomeReleaseError
 
     with pytest.raises(EsphomeReleaseError, match="ALL_CHANGES_END"):
-        cutting._merge_changes(
-            STABLE_PAGE, [_docs_change(cutting, FakePR(1, "Fix"))], beta=False
-        )
+        cutting._merge_changes(STABLE_PAGE, [_docs_change(cutting, FakePR(1, "Fix"))], beta=False)
 
 
 def test_remove_beta_changes_block(cutting):
     populated = (
-        "x\n\n{/* BETA_CHANGES_START */}\n### Beta Changes\n\n- a\n"
-        "{/* BETA_CHANGES_END */}\n\n### All changes\n"
+        "x\n\n{/* BETA_CHANGES_START */}\n### Beta Changes\n\n- a\n{/* BETA_CHANGES_END */}\n\n### All changes\n"
     )
     empty = "x\n\n{/* BETA_CHANGES_START */}\n{/* BETA_CHANGES_END */}\n\n### All changes\n"
     assert cutting._remove_beta_changes_block(populated) == "x\n\n### All changes\n"
@@ -524,9 +480,7 @@ def test_docs_changes_formats_and_flags(cutting, monkeypatch):
     monkeypatch.setattr(cutting.EsphomeProject, "prs_between", fake.prs_between)
     monkeypatch.setattr(cutting.EsphomeProject, "get_pr", fake.get_pr)
 
-    changes = cutting._docs_changes(
-        version=Version.parse("2026.7.0b2"), base=Version.parse("2026.7.0b1")
-    )
+    changes = cutting._docs_changes(version=Version.parse("2026.7.0b2"), base=Version.parse("2026.7.0b1"))
     assert [c.ref for c in changes] == ["[esphome#1]", "[esphome#3]"]
     assert changes[0].msg == _line(prs[0])
     assert not changes[0].is_dependency
@@ -566,10 +520,7 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     from esphomerelease.model import Version
 
     page = docs_git / "src" / "content" / "docs" / "changelog" / "2026.7.0.mdx"
-    post = (
-        docs_git / "src" / "content" / "docs" / "blog"
-        / "2026" / "07" / "15" / "esphome-2026-7.mdx"
-    )
+    post = docs_git / "src" / "content" / "docs" / "blog" / "2026" / "07" / "15" / "esphome-2026-7.mdx"
 
     # First beta: blog post + page skeleton + full changes block + beta notice.
     messages, commits, opened, confirmed = _run_docs_insert_changelog(
@@ -602,13 +553,10 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     )
     content = page.read_text()
     assert (
-        f"{{/* BETA_CHANGES_START */}}\n### Beta Changes\n\n"
-        f"{_line(beta_fix)}\n{{/* BETA_CHANGES_END */}}"
+        f"{{/* BETA_CHANGES_START */}}\n### Beta Changes\n\n{_line(beta_fix)}\n{{/* BETA_CHANGES_END */}}"
     ) in content
     assert f"{_line(B1_PRS[1])}\n{_line(beta_fix)}\n{{/* ALL_CHANGES_END */}}" in content
-    assert (
-        f"{_line(B1_PRS[2])}\n{_line(beta_dep)}\n{{/* DEPENDENCY_CHANGES_END */}}"
-    ) in content
+    assert (f"{_line(B1_PRS[2])}\n{_line(beta_dep)}\n{{/* DEPENDENCY_CHANGES_END */}}") in content
     assert content.count(NOTICE) == 1
     assert content.count(_line(B1_PRS[1])) == 1
     assert post.read_text().count(NOTICE) == 1
@@ -646,14 +594,8 @@ def test_docs_insert_changelog_release_cycle(cutting, docs_git, monkeypatch):
     assert page.read_text() == page_before
     content = post.read_text()
     assert "## Release 2026.7.1 - " in content
-    assert (
-        f"{_line(patch_fix)}\n\n"
-        f"{cutting.MD013_ENABLE}\n\n"
-        "## Full List of Changes"
-    ) in content
-    assert content.index("## Release 2026.7.1") < content.index(
-        "## Full List of Changes"
-    )
+    assert (f"{_line(patch_fix)}\n\n{cutting.MD013_ENABLE}\n\n## Full List of Changes") in content
+    assert content.index("## Release 2026.7.1") < content.index("## Full List of Changes")
     # A patch leaves the changelog page alone, so only the post is reviewed.
     assert opened == [(str(post),)]
     assert confirmed == ["Does the release notes blog post look correct?"]

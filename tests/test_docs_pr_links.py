@@ -26,10 +26,7 @@ def test_pull_url_reference():
 
 
 def test_results_are_sorted_and_deduplicated():
-    body = (
-        "esphome/esphome#30 and esphome/esphome#10 plus "
-        "https://github.com/esphome/esphome/pull/10"
-    )
+    body = "esphome/esphome#30 and esphome/esphome#10 plus https://github.com/esphome/esphome/pull/10"
     assert extract_esphome_pr_numbers(body) == [10, 30]
 
 
@@ -99,10 +96,7 @@ def test_docs_old_repo_slug_shorthand_reference():
 
 
 def test_docs_pull_url_references():
-    body = (
-        "https://github.com/esphome/esphome.io/pull/123 and "
-        "https://github.com/esphome/esphome-docs/pull/456"
-    )
+    body = "https://github.com/esphome/esphome.io/pull/123 and https://github.com/esphome/esphome-docs/pull/456"
     assert extract_docs_pr_numbers(body) == [123, 456]
 
 
@@ -119,10 +113,7 @@ def test_docs_developer_docs_repo_is_not_matched():
     """developers.esphome.io is a *different* repo (the esphome PR template has
     its own field for it right below the docs field), so neither its shorthand
     nor its pull URL may be reported as a docs PR."""
-    body = (
-        "- esphome/developers.esphome.io#123\n"
-        "- https://github.com/esphome/developers.esphome.io/pull/456\n"
-    )
+    body = "- esphome/developers.esphome.io#123\n- https://github.com/esphome/developers.esphome.io/pull/456\n"
     assert extract_docs_pr_numbers(body) == []
 
 
@@ -135,10 +126,7 @@ def test_docs_unfilled_template_placeholder_is_ignored():
 
 def test_docs_template_heading_repo_link_is_ignored():
     """The template's heading links the repo itself, with no /pull/N."""
-    body = (
-        "**Pull request in [esphome.io](https://github.com/esphome/esphome.io) "
-        "with documentation (if applicable):**"
-    )
+    body = "**Pull request in [esphome.io](https://github.com/esphome/esphome.io) with documentation (if applicable):**"
     assert extract_docs_pr_numbers(body) == []
 
 
@@ -148,10 +136,7 @@ def test_docs_markdown_link_text_does_not_create_false_positive():
 
 
 def test_docs_results_are_sorted_and_deduplicated():
-    body = (
-        "esphome/esphome.io#30 and esphome/esphome-docs#10 plus "
-        "https://github.com/esphome/esphome.io/pull/10"
-    )
+    body = "esphome/esphome.io#30 and esphome/esphome-docs#10 plus https://github.com/esphome/esphome.io/pull/10"
     assert extract_docs_pr_numbers(body) == [10, 30]
 
 
@@ -180,10 +165,7 @@ CODE_17797_BODY = (
     "with documentation (if applicable):**\n"
     "- esphome/esphome.io#7071\n"
 )
-CODE_14255_BODY = (
-    "**Pull request in esphome-docs with documentation (if applicable):**\n"
-    "- esphome/esphome-docs#6676\n"
-)
+CODE_14255_BODY = "**Pull request in esphome-docs with documentation (if applicable):**\n- esphome/esphome-docs#6676\n"
 
 
 def test_is_confirmed_pair_both_directions():
@@ -215,6 +197,4 @@ def test_is_confirmed_pair_rejects_missing_docs_side_reference():
 
 
 def test_is_confirmed_pair_rejects_empty_bodies():
-    assert not is_confirmed_pair(
-        docs_body=None, docs_number=1, code_body=None, code_number=2
-    )
+    assert not is_confirmed_pair(docs_body=None, docs_number=1, code_body=None, code_number=2)

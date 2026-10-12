@@ -12,17 +12,15 @@ typing underneath), so it stays importable and testable without a configured
 working copy — mirroring ``milestone.py``.
 """
 
-from typing import List, Optional
-
 from .model import Version
 
 
 def resolve_changelog_labels(
-    labels: List[str],
-    milestone_title: Optional[str],
+    labels: list[str],
+    milestone_title: str | None,
     base_version: Version,
     head_version: Version,
-) -> Optional[List[str]]:
+) -> list[str] | None:
     """Decide whether a PR belongs in the changelog and with which labels.
 
     Returns the effective list of labels to render the PR with, or ``None`` if

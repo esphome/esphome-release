@@ -7,6 +7,8 @@ aborts the cut before anything is pushed.
 The ``cutting`` fixture lives in ``conftest.py``.
 """
 
+from typing import Any
+
 import pytest
 
 from esphomerelease.exceptions import EsphomeReleaseError
@@ -27,7 +29,7 @@ LS_IGNORED = (
 def docs(cutting, monkeypatch):
     """Record docs project commands, checkouts and commits instead of running them."""
     proj = cutting.EsphomeDocsProject
-    calls = {"run": [], "checkout": [], "commit": [], "fail": set(), "ignored": b""}
+    calls: dict[str, Any] = {"run": [], "checkout": [], "commit": [], "fail": set(), "ignored": b""}
 
     def run_command(*args, **kwargs):
         calls["run"].append(args)
@@ -39,17 +41,13 @@ def docs(cutting, monkeypatch):
         return b""
 
     monkeypatch.setattr(proj, "run_command", run_command)
-    monkeypatch.setattr(proj, "checkout", lambda b: calls["checkout"].append(b))
-    monkeypatch.setattr(
-        proj, "commit", lambda msg, **kw: calls["commit"].append((msg, kw))
-    )
+    monkeypatch.setattr(proj, "checkout", calls["checkout"].append)
+    monkeypatch.setattr(proj, "commit", lambda msg, **kw: calls["commit"].append((msg, kw)))
     return calls
 
 
 def test_lint_passes_runs_every_ci_step_on_bump_branch(cutting, docs, monkeypatch):
-    monkeypatch.setattr(
-        cutting.click, "confirm", lambda *a, **k: pytest.fail("no prompt expected")
-    )
+    monkeypatch.setattr(cutting.click, "confirm", lambda *a, **k: pytest.fail("no prompt expected"))
 
     cutting._lint_docs(VERSION)
 
@@ -63,11 +61,7 @@ def test_lint_skips_gitignored_paths(cutting, docs, monkeypatch, capsys):
     (caches, Claude worktrees, venvs) is passed to them as ignores; contents
     git lists under an already ignored directory collapse into it."""
     docs["ignored"] = (
-        b".claude/worktrees/\n"
-        b".pytest_cache/\n"
-        b".pytest_cache/README.md\n"
-        b"script/cache/\n"
-        b"src/data/allowed-referrers.json\n"
+        b".claude/worktrees/\n.pytest_cache/\n.pytest_cache/README.md\nscript/cache/\nsrc/data/allowed-referrers.json\n"
     )
     ignored = [
         ".claude/worktrees/",
@@ -107,21 +101,14 @@ def test_lint_skips_gitignored_paths(cutting, docs, monkeypatch, capsys):
         images,
     ]
     # Failures are reported by the base command, not the ignore-laden one.
-    assert (
-        "Docs lint failed: npx markdownlint --config .markdownlintrc ., "
-        "npm run lint:js"
-    ) in capsys.readouterr().out
+    assert ("Docs lint failed: npx markdownlint --config .markdownlintrc ., npm run lint:js") in capsys.readouterr().out
 
 
-def test_lint_failure_reports_all_steps_then_commits_fixes(
-    cutting, docs, monkeypatch, capsys
-):
+def test_lint_failure_reports_all_steps_then_commits_fixes(cutting, docs, monkeypatch, capsys):
     lint, images = cutting.DOCS_LINT_COMMANDS[3], cutting.DOCS_LINT_COMMANDS[4]
     docs["fail"] = {lint, images}
     prompts = []
-    monkeypatch.setattr(
-        cutting.click, "confirm", lambda text, **k: prompts.append(text) or True
-    )
+    monkeypatch.setattr(cutting.click, "confirm", lambda text, **k: prompts.append(text) or True)
 
     cutting._lint_docs(VERSION)
 
@@ -133,9 +120,7 @@ def test_lint_failure_reports_all_steps_then_commits_fixes(
         LS_IGNORED,
         *cutting.DOCS_LINT_COMMANDS,
     ]
-    assert "Docs lint failed: npm run lint, npm run check:images" in (
-        capsys.readouterr().out
-    )
+    assert "Docs lint failed: npm run lint, npm run check:images" in (capsys.readouterr().out)
     assert len(prompts) == 1
     assert docs["commit"] == [("Fix docs lint for 2026.10.0b1", {"ignore_empty": True})]
 

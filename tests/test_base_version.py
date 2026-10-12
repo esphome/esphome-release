@@ -74,8 +74,8 @@ def test_previous_patch_version():
 
 
 def test_previous_patch_version_of_first_release_raises():
-    with pytest.raises(ValueError):
-        Version.parse("2026.6.0").previous_patch_version
+    with pytest.raises(ValueError, match=r"No previous patch version for 2026\.6\.0"):
+        _ = Version.parse("2026.6.0").previous_patch_version
 
 
 def test_default_base_for_later_beta_needs_no_api(modules):
@@ -83,9 +83,7 @@ def test_default_base_for_later_beta_needs_no_api(modules):
     _, cutting = modules
     cutting.EsphomeProject._repo = None  # any API access would blow up
 
-    assert cutting._default_base_version(Version.parse("2026.7.0b3")) == Version.parse(
-        "2026.7.0b2"
-    )
+    assert cutting._default_base_version(Version.parse("2026.7.0b3")) == Version.parse("2026.7.0b2")
 
 
 def test_default_base_for_patch_release_needs_no_api(modules):
@@ -93,33 +91,23 @@ def test_default_base_for_patch_release_needs_no_api(modules):
     _, cutting = modules
     cutting.EsphomeProject._repo = None
 
-    assert cutting._default_base_version(Version.parse("2026.6.2")) == Version.parse(
-        "2026.6.1"
-    )
+    assert cutting._default_base_version(Version.parse("2026.6.2")) == Version.parse("2026.6.1")
 
 
 def test_default_base_for_first_beta_uses_latest_stable(modules):
     """b1 has no derivable base; it asks GitHub for the latest stable release."""
     _, cutting = modules
-    cutting.EsphomeProject._repo = FakeReleasesRepo(
-        latest_tag="2026.6.3", all_tags=[]
-    )
+    cutting.EsphomeProject._repo = FakeReleasesRepo(latest_tag="2026.6.3", all_tags=[])
 
-    assert cutting._default_base_version(Version.parse("2026.7.0b1")) == Version.parse(
-        "2026.6.3"
-    )
+    assert cutting._default_base_version(Version.parse("2026.7.0b1")) == Version.parse("2026.6.3")
 
 
 def test_default_base_for_first_full_release_uses_latest_stable(modules):
     """x.y.0 has no derivable base; it asks GitHub for the latest stable release."""
     _, cutting = modules
-    cutting.EsphomeProject._repo = FakeReleasesRepo(
-        latest_tag="2026.6.3", all_tags=[]
-    )
+    cutting.EsphomeProject._repo = FakeReleasesRepo(latest_tag="2026.6.3", all_tags=[])
 
-    assert cutting._default_base_version(Version.parse("2026.7.0")) == Version.parse(
-        "2026.6.3"
-    )
+    assert cutting._default_base_version(Version.parse("2026.7.0")) == Version.parse("2026.6.3")
 
 
 def test_prompt_base_version_offers_derived_default(modules, monkeypatch):
@@ -134,9 +122,7 @@ def test_prompt_base_version_offers_derived_default(modules, monkeypatch):
 
     monkeypatch.setattr(cutting.click, "prompt", fake_prompt)
 
-    assert cutting._prompt_base_version(Version.parse("2026.7.0b2")) == Version.parse(
-        "2026.7.0b1"
-    )
+    assert cutting._prompt_base_version(Version.parse("2026.7.0b2")) == Version.parse("2026.7.0b1")
     assert seen["default"] == "2026.7.0b1"
 
 
@@ -253,14 +239,10 @@ def test_publish_with_explicit_base_skips_prompt(modules, monkeypatch, func, ver
 
     monkeypatch.setattr(cutting, "_prompt_base_version", no_prompt)
     published = {}
-    monkeypatch.setattr(
-        cutting, "_publish_release", lambda **kwargs: published.update(kwargs)
-    )
+    monkeypatch.setattr(cutting, "_publish_release", lambda **kwargs: published.update(kwargs))
 
     base = Version.parse("2026.6.0")
-    getattr(cutting, func)(
-        Version.parse(version), projects=[FakePublishProject()], base=base, confirmed=True
-    )
+    getattr(cutting, func)(Version.parse(version), projects=[FakePublishProject()], base=base, confirmed=True)
 
     assert published["base"] == base
     assert published["confirmed"] is True

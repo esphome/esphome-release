@@ -144,11 +144,9 @@ def test_propagate_pushes_merge_left_behind_by_an_earlier_run(cutting, docs_repo
 
 def test_propagate_without_changes_does_not_push(cutting, docs_repo, monkeypatch):
     """Nothing to propagate means no push at all."""
-    work, _ = docs_repo
+    _work, _ = docs_repo
     pushes = []
-    monkeypatch.setattr(
-        cutting.EsphomeDocsProject, "push", lambda *a, **k: pushes.append(True)
-    )
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "push", lambda *a, **k: pushes.append(True))
 
     cutting.propagate_docs_current_branch()
 
@@ -200,13 +198,9 @@ def _stub_cut_helpers(cutting, monkeypatch, order):
     ):
         monkeypatch.setattr(cutting, name, lambda *a, **k: [])
 
-    monkeypatch.setattr(
-        cutting, "_prompt_base_version", lambda *a, **k: Version.parse("2026.5.0")
-    )
+    monkeypatch.setattr(cutting, "_prompt_base_version", lambda *a, **k: Version.parse("2026.5.0"))
     monkeypatch.setattr(cutting, "update_local_copies", lambda: order.append("update"))
-    monkeypatch.setattr(
-        cutting, "propagate_docs_current_branch", lambda: order.append("propagate")
-    )
+    monkeypatch.setattr(cutting, "propagate_docs_current_branch", lambda: order.append("propagate"))
 
 
 def test_cut_release_propagates_after_updating(cutting, monkeypatch):
@@ -226,9 +220,7 @@ def test_cut_beta_release_propagates_after_updating(cutting, monkeypatch):
     order = []
     _stub_cut_helpers(cutting, monkeypatch, order)
     opened = []
-    monkeypatch.setattr(
-        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
-    )
+    monkeypatch.setattr(cutting, "_open_next_cycle_milestone", opened.append)
 
     base = cutting.cut_beta_release(Version.parse("2026.6.0b2"))
     assert base == Version.parse("2026.5.0")
@@ -244,9 +236,7 @@ def test_cut_first_beta_propagates_after_updating(cutting, monkeypatch):
     order = []
     _stub_cut_helpers(cutting, monkeypatch, order)
     opened = []
-    monkeypatch.setattr(
-        cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
-    )
+    monkeypatch.setattr(cutting, "_open_next_cycle_milestone", opened.append)
 
     # The first-beta path bumps and pushes the dev branch of each project.
     for proj in (cutting.EsphomeProject, cutting.EsphomeDocsProject):
@@ -268,9 +258,7 @@ def test_publish_only_updates_local_copies(cutting, monkeypatch):
 
     order = []
     monkeypatch.setattr(cutting, "update_local_copies", lambda: order.append("update"))
-    monkeypatch.setattr(
-        cutting, "propagate_docs_current_branch", lambda: order.append("propagate")
-    )
+    monkeypatch.setattr(cutting, "propagate_docs_current_branch", lambda: order.append("propagate"))
     monkeypatch.setattr(cutting, "confirm", lambda *a, **k: None)
 
     cutting._publish_release(
@@ -290,14 +278,14 @@ def test_publish_release_confirmation(cutting, monkeypatch):
 
     asked = []
     monkeypatch.setattr(cutting, "update_local_copies", lambda: None)
-    monkeypatch.setattr(cutting, "confirm", lambda text: asked.append(text))
-    kwargs = dict(
-        version=Version.parse("2026.6.0b2"),
-        base=Version.parse("2026.6.0b1"),
-        head_branch=Branch.BETA,
-        prerelease=True,
-        projects=[],
-    )
+    monkeypatch.setattr(cutting, "confirm", asked.append)
+    kwargs = {
+        "version": Version.parse("2026.6.0b2"),
+        "base": Version.parse("2026.6.0b1"),
+        "head_branch": Branch.BETA,
+        "prerelease": True,
+        "projects": [],
+    }
 
     cutting._publish_release(**kwargs)
     assert asked == ["Publish version 2026.6.0b2?"]

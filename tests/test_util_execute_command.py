@@ -15,7 +15,7 @@ import pytest
 def util(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.json").write_text("{}")
-    import esphomerelease.config as config
+    from esphomerelease import config
 
     importlib.reload(config)
     import esphomerelease.util as util_mod
@@ -82,6 +82,4 @@ def test_fail_ok_live_raises(util):
     from esphomerelease.exceptions import EsphomeReleaseError
 
     with pytest.raises(EsphomeReleaseError):
-        util.execute_command(
-            "sh", "-c", "exit 1", fail_ok=True, live=True, silent=True
-        )
+        util.execute_command("sh", "-c", "exit 1", fail_ok=True, live=True, silent=True)

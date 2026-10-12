@@ -5,8 +5,9 @@ Extracted from ``docs.gen_supporters`` so it can be unit-tested without a
 or ``.project`` coupling.
 """
 
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Mapping, TypedDict
+from typing import TypedDict
 
 CONTRIBUTIONS_PLACEHOLDER = "TEMPLATE_CONTRIBUTIONS"
 GENERATION_DATE_PLACEHOLDER = "TEMPLATE_GENERATION_DATE"
@@ -64,9 +65,7 @@ def format_supporter_lines(users: Mapping[str, Supporter]) -> list[str]:
     whitespace from the chosen name. Mirrors the historical output exactly.
     """
     lines = []
-    for entry in sorted(
-        users.values(), key=lambda supporter: supporter["login"].casefold()
-    ):
+    for entry in sorted(users.values(), key=lambda supporter: supporter["login"].casefold()):
         login = entry["login"]
         name = entry["name"] or login
         lines.append(f"- [{name.strip()} (@{login})](https://github.com/{login})")
@@ -78,12 +77,7 @@ def format_generation_date(now: datetime) -> str:
     return f"{now:%B} {now.day}, {now.year}"
 
 
-def render_supporters_template(
-    template: str, contribs_lines: list[str], now: datetime
-) -> str:
+def render_supporters_template(template: str, contribs_lines: list[str], now: datetime) -> str:
     """Substitute the contributions block and generation date into the template."""
     template = template.replace(CONTRIBUTIONS_PLACEHOLDER, "\n".join(contribs_lines))
-    template = template.replace(
-        GENERATION_DATE_PLACEHOLDER, format_generation_date(now)
-    )
-    return template
+    return template.replace(GENERATION_DATE_PLACEHOLDER, format_generation_date(now))

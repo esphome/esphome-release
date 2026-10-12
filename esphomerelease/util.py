@@ -1,18 +1,19 @@
 import datetime
 import os
-import subprocess
-import time
-import threading
 import queue
 import shlex
+import subprocess
 import sys
+import threading
+import time
+from typing import Any, cast
 
 import click
 import requests
 
 from .config import CONFIG
-from .model import Branch, Version
 from .exceptions import EsphomeReleaseError
+from .model import Branch, Version
 
 
 def copy_clipboard(text):
@@ -78,9 +79,7 @@ def purge_cloudflare_cache():
     )
 
 
-def process_asynchronously(
-    jobs, heading: str = None, num_threads: int = os.cpu_count()
-) -> list:
+def process_asynchronously(jobs, heading: str | None = None, num_threads: int = os.cpu_count() or 1) -> list:
     """Run a list of function objects asynchronously in a thread pool and return the result as a list."""
     if not jobs:
         return []
@@ -142,9 +141,7 @@ def _discard_local_changes():
             ),
             default=True,
         ):
-            raise EsphomeReleaseError(
-                f"Aborted: local changes in {project.shortname} repository"
-            )
+            raise EsphomeReleaseError(f"Aborted: local changes in {project.shortname} repository")
         project.run_git("reset", "--hard", "HEAD")
         project.run_git("clean", "-fd")
 
@@ -156,7 +153,7 @@ def update_local_copies():
     work and pulls. Branch-to-branch merges belong in
     :func:`propagate_docs_current_branch`, which pushes what it creates.
     """
-    from .project import EsphomeDocsProject, EsphomeProject, EsphomeHassioProject
+    from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject
 
     _discard_local_changes()
 
@@ -237,7 +234,7 @@ def confirm(text):
         pass
 
 
-def execute_command(*args, **kwargs) -> bytes:
+def execute_command(*args: str, **kwargs: Any) -> bytes:
     """Execute an external program given by `args` and return the result stdout.
 
     show: Show the stdout output
@@ -270,7 +267,8 @@ def execute_command(*args, **kwargs) -> bytes:
     if live:
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.STDOUT
-        process = subprocess.Popen(args, **kwargs)
+        # Popen (live) or CompletedProcess; the **kwargs overloads cannot be resolved statically.
+        process = cast("Any", subprocess.Popen(args, **kwargs))
         while True:
             out = process.stdout.readline().decode()
             sys.stdout.write(out)
@@ -278,7 +276,7 @@ def execute_command(*args, **kwargs) -> bytes:
             if process.poll() is not None:
                 break
     else:
-        process = subprocess.run(args, **kwargs)
+        process = cast("Any", subprocess.run(args, **kwargs))
 
         if show:
             print(process.stdout.decode())

@@ -14,7 +14,6 @@ elsewhere in this repo.
 import importlib
 import json
 import types
-from typing import List, Optional
 
 import pytest
 from click.testing import CliRunner
@@ -51,7 +50,7 @@ def modules(tmp_path, monkeypatch):
     return project_mod, commands_mod
 
 
-def _pull(head: str, *, state: str = "open", merged_at: Optional[str] = None):
+def _pull(head: str, *, state: str = "open", merged_at: str | None = None):
     return types.SimpleNamespace(
         state=state,
         merged_at=merged_at,
@@ -64,7 +63,7 @@ class FakePullsRepo:
 
     def __init__(self, pulls_by_base: dict):
         self._pulls_by_base = pulls_by_base
-        self.calls: List[tuple] = []
+        self.calls: list[tuple] = []
 
     def pull_requests(self, *, base: str, state: str, number: int) -> list:
         self.calls.append((base, state, number))
@@ -188,7 +187,7 @@ def publish_calls(modules, monkeypatch):
     return calls
 
 
-def _set_pending(commands, monkeypatch, versions: List[str]) -> None:
+def _set_pending(commands, monkeypatch, versions: list[str]) -> None:
     from esphomerelease.model import Version
 
     monkeypatch.setattr(
@@ -198,9 +197,7 @@ def _set_pending(commands, monkeypatch, versions: List[str]) -> None:
     )
 
 
-def test_publish_without_version_uses_pending_release(
-    modules, publish_calls, monkeypatch
-):
+def test_publish_without_version_uses_pending_release(modules, publish_calls, monkeypatch):
     from esphomerelease.model import Version
 
     _, commands = modules
@@ -243,9 +240,7 @@ def test_publish_without_version_multiple_pending(modules, publish_calls, monkey
     result = CliRunner().invoke(commands.cli, ["publish"])
 
     assert result.exit_code != 0
-    assert (
-        "multiple cut-but-unpublished releases (2026.8.0, 2026.8.0b5)" in result.output
-    )
+    assert "multiple cut-but-unpublished releases (2026.8.0, 2026.8.0b5)" in result.output
     assert publish_calls == []
 
 

@@ -84,10 +84,7 @@ def test_labels_updates_creates_and_renames(commands, monkeypatch):
     existing_beta = FakeLabel("component: beta")
     stray = FakeLabel("integration: stray")
     esphome_repo = FakeLabelRepo("esphome", [old_alpha, existing_beta, stray])
-    other_repos = {
-        name: FakeLabelRepo(name)
-        for name in ("issues", "feature-requests", "esphome.io")
-    }
+    other_repos = {name: FakeLabelRepo(name) for name in ("issues", "feature-requests", "esphome.io")}
     repos = {"esphome": esphome_repo, **other_repos}
 
     session = type(
@@ -115,3 +112,39 @@ def test_labels_updates_creates_and_renames(commands, monkeypatch):
         ]
         assert repo.labels_calls == 1
     assert esphome_repo.labels_calls == 1
+
+
+class FailingLabel(FakeLabel):
+    def update(self, *, name: str, color: str) -> None:
+        raise RuntimeError("update failed")
+
+
+class FailingCreateRepo(FakeLabelRepo):
+    def create_label(self, *, name: str, color: str) -> None:
+        raise RuntimeError("create failed")
+
+
+def test_labels_records_update_and_create_failures(commands, monkeypatch):
+    """Failed renames (component pass and cleanup pass) and failed creates are
+    collected and reported per repo instead of aborting the run."""
+    old_alpha = FailingLabel("Integration: alpha")
+    stray = FailingLabel("integration: stray")
+    esphome_repo = FailingCreateRepo("esphome", [old_alpha, stray, FakeLabel("component: beta")])
+    repos = {
+        "esphome": esphome_repo,
+        "issues": FakeLabelRepo("issues", [FakeLabel("component: alpha"), FakeLabel("component: beta")]),
+        "feature-requests": FakeLabelRepo(
+            "feature-requests", [FakeLabel("component: alpha"), FakeLabel("component: beta")]
+        ),
+        "esphome.io": FakeLabelRepo("esphome.io", [FakeLabel("component: alpha"), FakeLabel("component: beta")]),
+    }
+    session = type("FakeSession", (), {"repository": lambda self, owner, name: repos[name]})()
+    monkeypatch.setattr(commands, "get_session", lambda: session)
+
+    result = CliRunner().invoke(commands.cli, ["labels"])
+
+    assert result.exit_code == 0, result.output
+    assert "Failed to update labels in the following repos:" in result.output
+    assert 'esphome: ["component: alpha", "component: stray"]' in result.output
+    assert "Failed to create labels in the following repos:" in result.output
+    assert 'esphome: ["component: gamma"]' in result.output

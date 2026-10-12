@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from esphomerelease.supporters import (
+    Supporter,
     format_generation_date,
     format_supporter_lines,
     is_bot_account,
@@ -15,7 +16,7 @@ def test_format_lines_basic():
 
 
 def test_format_lines_sorted_case_insensitively():
-    users = {
+    users: dict[str, Supporter] = {
         "3": {"login": "zoe", "name": "Zoe"},
         "2": {"login": "Bob", "name": "Bob"},
         "1": {"login": "alice", "name": "Alice"},
@@ -27,7 +28,7 @@ def test_format_lines_sorted_case_insensitively():
 
 def test_format_lines_sort_ignores_id_key_order():
     """Ordering follows the login inside each entry, not the id keys."""
-    users = {
+    users: dict[str, Supporter] = {
         "999": {"login": "alice", "name": "Alice"},
         "1": {"login": "zoe", "name": "Zoe"},
     }
@@ -46,10 +47,8 @@ def test_format_lines_missing_name_falls_back_to_login():
 
 
 def test_format_lines_strips_whitespace_from_name():
-    users = {"1": {"login": "x", "name": "  Padded Name  "}}
-    assert format_supporter_lines(users) == [
-        "- [Padded Name (@x)](https://github.com/x)"
-    ]
+    users: dict[str, Supporter] = {"1": {"login": "x", "name": "  Padded Name  "}}
+    assert format_supporter_lines(users) == ["- [Padded Name (@x)](https://github.com/x)"]
 
 
 def test_format_lines_empty_mapping():
@@ -62,9 +61,7 @@ def test_format_generation_date():
 
 
 def test_render_substitutes_both_placeholders():
-    template = (
-        "Contributors:\nTEMPLATE_CONTRIBUTIONS\nGenerated TEMPLATE_GENERATION_DATE"
-    )
+    template = "Contributors:\nTEMPLATE_CONTRIBUTIONS\nGenerated TEMPLATE_GENERATION_DATE"
     out = render_supporters_template(
         template,
         ["- a", "- b"],

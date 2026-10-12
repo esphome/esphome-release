@@ -37,7 +37,7 @@ def docs_mod(tmp_path, monkeypatch):
     import esphomerelease.project as project_mod
 
     importlib.reload(project_mod)
-    import esphomerelease.docs as docs
+    from esphomerelease import docs
 
     importlib.reload(docs)
     return docs
@@ -53,7 +53,7 @@ def _not_found_error() -> NotFoundError:
 
 
 class FakeContributor:
-    def __init__(self, login: str, account_id: int, *, type: str = "User"):  # noqa: A002
+    def __init__(self, login: str, account_id: int, *, type: str = "User"):
         self.login = login
         self.id = account_id
         self.type = type
@@ -81,11 +81,7 @@ class FakeSession:
 
     def organization(self, name: str):
         assert name == "esphome"
-        return types.SimpleNamespace(
-            repositories=lambda: [
-                types.SimpleNamespace(name=name) for name in self._repos
-            ]
-        )
+        return types.SimpleNamespace(repositories=lambda: [types.SimpleNamespace(name=name) for name in self._repos])
 
     def repository(self, owner: str, name: str) -> FakeRepo:
         assert owner == "esphome"
@@ -105,9 +101,7 @@ def test_gen_supporters_end_to_end(docs_mod, tmp_path, capsys):
     has its login updated without a name re-fetch (free rename tracking), a
     brand new id gets its name fetched, a 404'd login is reported and not
     cached, and the cache is written sorted by numeric id."""
-    (tmp_path / "supporters.template.md").write_text(
-        "TEMPLATE_CONTRIBUTIONS\nTEMPLATE_GENERATION_DATE\n"
-    )
+    (tmp_path / "supporters.template.md").write_text("TEMPLATE_CONTRIBUTIONS\nTEMPLATE_GENERATION_DATE\n")
     # id 3 is already cached under a stale login ("renamed-old"); the repos
     # below report it under a new login ("renamed-new") - its login must be
     # updated in place without spending a session.user() call on its name.
@@ -117,9 +111,7 @@ def test_gen_supporters_end_to_end(docs_mod, tmp_path, capsys):
 
     session = FakeSession(
         repos={
-            "esphome": FakeRepo(
-                [FakeContributor("alice", 1), FakeContributor("bob", 2)]
-            ),
+            "esphome": FakeRepo([FakeContributor("alice", 1), FakeContributor("bob", 2)]),
             "esphome.io": FakeRepo(
                 [
                     FakeContributor("bob", 2),
@@ -151,9 +143,7 @@ def test_gen_supporters_end_to_end(docs_mod, tmp_path, capsys):
     # Sorted by numeric id ascending.
     assert list(cache.keys()) == ["1", "2", "3"]
 
-    page = (
-        tmp_path / "repo" / "src" / "content" / "docs" / "guides" / "supporters.mdx"
-    ).read_text()
+    page = (tmp_path / "repo" / "src" / "content" / "docs" / "guides" / "supporters.mdx").read_text()
     assert "- [Alice A (@alice)](https://github.com/alice)" in page
     assert "- [bob (@bob)](https://github.com/bob)" in page
     assert "- [Renamed Person (@renamed-new)](https://github.com/renamed-new)" in page
@@ -163,9 +153,7 @@ def test_gen_supporters_end_to_end(docs_mod, tmp_path, capsys):
 def test_gen_supporters_missing_cache_file_starts_empty(docs_mod, tmp_path):
     """No users_cache.json yet: gen_supporters starts from an empty cache
     instead of raising, and fetches every contributor's name."""
-    (tmp_path / "supporters.template.md").write_text(
-        "TEMPLATE_CONTRIBUTIONS\nTEMPLATE_GENERATION_DATE\n"
-    )
+    (tmp_path / "supporters.template.md").write_text("TEMPLATE_CONTRIBUTIONS\nTEMPLATE_GENERATION_DATE\n")
     assert not (tmp_path / docs_mod.USERS_CACHE_FILE).exists()
 
     session = FakeSession(

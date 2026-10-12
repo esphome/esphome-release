@@ -2,7 +2,6 @@ import functools
 import glob
 import json
 from pathlib import Path
-from typing import List, Optional
 
 import click
 from github3.issues.label import Label
@@ -55,9 +54,7 @@ def _commit_user_cache_if_changed():
 
 
 @click.group()
-@click.option(
-    "--step/--no-step", default=False, help="Prompt before each command is executed."
-)
+@click.option("--step/--no-step", default=False, help="Prompt before each command is executed.")
 def cli(step):
     CONFIG["step"] = step
 
@@ -106,10 +103,7 @@ def _resolve_version(value: str) -> Version:
         return Version.parse(value)
 
     latest = EsphomeProject.latest_release()
-    if shorthand in STABLE_SHORTHANDS:
-        version = _next_stable_version(latest)
-    else:
-        version = _next_beta_version(latest)
+    version = _next_stable_version(latest) if shorthand in STABLE_SHORTHANDS else _next_beta_version(latest)
     gprint(f"Latest release is {latest}, resolved '{value}' to {version}")
     return version
 
@@ -119,15 +113,11 @@ def _resolve_version(value: str) -> Version:
 @click.option(
     "--watch/--no-watch",
     default=True,
-    help="After cutting, watch CI on the release PRs, send desktop "
-    "notifications and offer to publish once it passes.",
+    help="After cutting, watch CI on the release PRs, send desktop notifications and offer to publish once it passes.",
 )
 def cut(version, watch):
     version = _resolve_version(version)
-    if version.beta:
-        base = cutting.cut_beta_release(version)
-    else:
-        base = cutting.cut_release(version)
+    base = cutting.cut_beta_release(version) if version.beta else cutting.cut_release(version)
 
     _commit_user_cache_if_changed()
 
@@ -139,30 +129,21 @@ def _pending_release_version() -> Version:
     """The single release that has been cut but not published yet."""
     pending = EsphomeProject.pending_release_versions()
     if not pending:
-        raise click.ClickException(
-            "Found no cut-but-unpublished release, please pass the version "
-            "explicitly."
-        )
+        raise click.ClickException("Found no cut-but-unpublished release, please pass the version explicitly.")
     if len(pending) > 1:
         versions = ", ".join(str(version) for version in pending)
         raise click.ClickException(
-            f"Found multiple cut-but-unpublished releases ({versions}), please "
-            "pass the version explicitly."
+            f"Found multiple cut-but-unpublished releases ({versions}), please pass the version explicitly."
         )
     gprint(f"Publishing the release that was cut: {pending[0]}")
     return pending[0]
 
 
-@cli.command(
-    help=(
-        "Publish a release. "
-        f"{VERSION_ARG_HELP} Omit it to publish the release that was cut last."
-    )
-)
+@cli.command(help=(f"Publish a release. {VERSION_ARG_HELP} Omit it to publish the release that was cut last."))
 @click.argument("version", required=False)
 @click.option("--code", is_flag=True, default=False, help="Only publish code")
 @click.option("--docs", is_flag=True, default=False, help="Only publish docs")
-def publish(version: Optional[str], code: bool, docs: bool):
+def publish(version: str | None, code: bool, docs: bool):
     # If neither flag is specified, publish both
     if not code and not docs:
         code = True
@@ -175,11 +156,11 @@ def publish(version: Optional[str], code: bool, docs: bool):
     if docs:
         projects.append(EsphomeDocsProject)
 
-    version = _resolve_version(version) if version else _pending_release_version()
-    if version.beta:
-        cutting.publish_beta_release(version, projects=projects)
+    resolved = _resolve_version(version) if version else _pending_release_version()
+    if resolved.beta:
+        cutting.publish_beta_release(resolved, projects=projects)
     else:
-        cutting.publish_release(version, projects=projects)
+        cutting.publish_release(resolved, projects=projects)
 
 
 @cli.command(help="Reset branches to their upstream versions.")
@@ -215,9 +196,7 @@ def reset():
 @click.option("--head-version", default=None, help="Head version")
 def release_notes(with_sections, include_author, base_ref, head_ref, head_version):
     if base_ref is None:
-        base_str = click.prompt(
-            "Please enter base version", default=str(EsphomeProject.latest_release())
-        )
+        base_str = click.prompt("Please enter base version", default=str(EsphomeProject.latest_release()))
     else:
         base_str = base_ref
 
@@ -225,12 +204,7 @@ def release_notes(with_sections, include_author, base_ref, head_ref, head_versio
     base_ref = f"{base_str}"
 
     default_head_version = None
-    if head_ref is None:
-        head_str = click.prompt(
-            "Please enter head ref (dev/beta/stable)", default="dev"
-        )
-    else:
-        head_str = head_ref
+    head_str = click.prompt("Please enter head ref (dev/beta/stable)", default="dev") if head_ref is None else head_ref
 
     if head_str == "dev":
         head_ref = Branch.DEV
@@ -246,9 +220,7 @@ def release_notes(with_sections, include_author, base_ref, head_ref, head_versio
         default_head_version = Version.parse(head_str)
 
     if head_version is None:
-        head_version_str = click.prompt(
-            "Please enter head version", default=str(default_head_version)
-        )
+        head_version_str = click.prompt("Please enter head version", default=str(default_head_version))
     else:
         head_version_str = head_version
     head_version = Version.parse(head_version_str)
@@ -284,9 +256,7 @@ def milestone_cherry_pick(milestone):
         if milestone_obj is None:
             confirm(f"Couldn't find milestone {milestone} for project {proj.name}")
             continue
-        if not click.confirm(
-            f"Cherry-pick commits for {proj.name} on current branch?", default=True
-        ):
+        if not click.confirm(f"Cherry-pick commits for {proj.name} on current branch?", default=True):
             continue
         ret = proj.cherry_pick_from_milestone(milestone_obj)
         if click.confirm("Label picked commits as cherry-picked?", default=True):
@@ -305,7 +275,7 @@ def _next_beta_milestone_title() -> str:
 
 @cli.command(help="List the PRs in the milestone that will be in the next beta release.")
 @click.argument("milestone", required=False)
-def next_beta_prs(milestone: Optional[str]) -> None:
+def next_beta_prs(milestone: str | None) -> None:
     if milestone is None:
         milestone = _next_beta_milestone_title()
 
@@ -319,18 +289,14 @@ def next_beta_prs(milestone: Optional[str]) -> None:
             continue
 
         prs = proj.get_next_beta_prs_for_milestone(milestone_obj)
-        gprint(
-            f"{proj.name}: {len(prs)} PR(s) on milestone {milestone} "
-            "will be in the next beta"
-        )
+        gprint(f"{proj.name}: {len(prs)} PR(s) on milestone {milestone} will be in the next beta")
         for pr in prs:
             print(f"  #{pr.number} {pr.title} by @{pr.user.login} ({pr.html_url})")
 
         open_prs = proj.get_open_prs_for_milestone(milestone_obj)
         if open_prs:
             gprint(
-                f"{proj.name}: {len(open_prs)} open PR(s) still on the milestone "
-                "(not in the beta unless merged)",
+                f"{proj.name}: {len(open_prs)} open PR(s) still on the milestone (not in the beta unless merged)",
                 fg="yellow",
             )
             for pr in open_prs:
@@ -338,16 +304,13 @@ def next_beta_prs(milestone: Optional[str]) -> None:
 
 
 def count_file(fname):
-    i = 0
-    with open(fname) as f:
-        for i, _ in enumerate(f):
-            pass
-    return i + 1
+    with Path(fname).open() as f:
+        return sum(1 for _ in f)
 
 
 def count_folder(path, mask):
     count = 0
-    for fname in glob.glob(str(path / "**" / mask), recursive=True):
+    for fname in glob.glob(str(path / "**" / mask), recursive=True):  # noqa: PTH207 - unlike Path.rglob, skips dot-directories
         count += count_file(fname)
     return count
 
@@ -388,7 +351,7 @@ def labels():
     # print('\n'.join(found_components))
 
     sess = get_session()
-    repos: List[Repository] = [
+    repos: list[Repository] = [
         sess.repository("esphome", "issues"),
         sess.repository("esphome", "feature-requests"),
         sess.repository("esphome", "esphome"),
@@ -406,28 +369,22 @@ def labels():
     )
     failed_to_update: dict[str, list[str]] = {}
     failed_to_create: dict[str, list[str]] = {}
-    for repo, repo_labels in zip(repos, all_repo_labels):
+    for repo, repo_labels in zip(repos, all_repo_labels, strict=True):
         # Index by lowercased name: with ~3k components and ~3k labels the
         # per-component list scans are millions of string compares.
         labels_by_lower_name: dict[str, list[Label]] = {}
         for repo_label in repo_labels:
-            labels_by_lower_name.setdefault(repo_label.name.lower(), []).append(
-                repo_label
-            )
+            labels_by_lower_name.setdefault(repo_label.name.lower(), []).append(repo_label)
         for comp in found_components:
             label_name = f"component: {comp.lower()}"
-            found_old_labels = labels_by_lower_name.get(
-                f"integration: {comp.lower()}", []
-            )
+            found_old_labels = labels_by_lower_name.get(f"integration: {comp.lower()}", [])
             found_new_labels = label_name in labels_by_lower_name
             if found_old_labels:
                 for found_old_label in found_old_labels:
-                    print(
-                        f"Updated label from {found_old_label.name} to '{label_name}' in {repo.name}"
-                    )
+                    print(f"Updated label from {found_old_label.name} to '{label_name}' in {repo.name}")
                     try:
                         found_old_label.update(name=label_name, color="ededed")
-                    except Exception as e:
+                    except Exception:
                         failed_to_update.setdefault(repo.name, []).append(label_name)
                 continue
             if found_new_labels:
@@ -435,24 +392,16 @@ def labels():
             print(f"Create label '{label_name}' in {repo.name}")
             try:
                 repo.create_label(name=label_name, color="ededed")
-            except Exception as e:
+            except Exception:
                 failed_to_create.setdefault(repo.name, []).append(label_name)
 
-        old_repo_labels = [
-            label for label in repo_labels if label.name.startswith("integration: ")
-        ]
+        old_repo_labels = [label for label in repo_labels if label.name.startswith("integration: ")]
         for old_label in old_repo_labels:
-            print(
-                f"Updating label '{old_label.name}' in {repo.name} to 'component: {old_label.name[13:].lower()}'"
-            )
+            print(f"Updating label '{old_label.name}' in {repo.name} to 'component: {old_label.name[13:].lower()}'")
             try:
-                old_label.update(
-                    name=f"component: {old_label.name[13:].lower()}", color="ededed"
-                )
-            except Exception as e:
-                failed_to_update.setdefault(repo.name, []).append(
-                    f"component: {old_label.name[13:].lower()}"
-                )
+                old_label.update(name=f"component: {old_label.name[13:].lower()}", color="ededed")
+            except Exception:
+                failed_to_update.setdefault(repo.name, []).append(f"component: {old_label.name[13:].lower()}")
 
     if failed_to_update:
         print("Failed to update labels in the following repos:")
