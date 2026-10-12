@@ -186,8 +186,11 @@ def _check_linked_docs_prs(version: Version):
     """Block the cut while a confirmed docs PR for this release is unmerged.
 
     Shipping the code without its documentation is the failure this guards
-    against, so unlike :func:`_check_open_milestone_prs` this always blocks: the
-    user merges the docs PR(s) and answers "Check again?", or aborts the cut.
+    against, so the user merges the docs PR(s) and checks again, or aborts the
+    cut. "Ignore" is the escape hatch for when the docs are knowingly going to
+    land later: unlike the open-PR gate there is nothing to move (the code PR
+    is already merged and docs PRs rarely carry a milestone), so it just
+    reports what ships undocumented and lets the cut through.
     """
     while True:
         unmerged, unconfirmed = _find_docs_pr_pairs(version)
@@ -223,11 +226,30 @@ def _check_linked_docs_prs(version: Version):
                 f"      needs docs#{docs_pr.number}: {docs_pr.title} ({docs_pr.html_url})"
             )
 
-        if not click.confirm(
-            click.style("Check again?", fg="yellow"),
-            default=True,
-        ):
+        choice = click.prompt(
+            click.style(
+                "[y] check again, [i] ignore (cut anyway, docs land later), "
+                "[n] abort",
+                fg="yellow",
+            ),
+            type=click.Choice(["y", "i", "n"]),
+            default="y",
+            show_default=True,
+        )
+        if choice == "n":
             raise EsphomeReleaseError("Aborted: unmerged docs PRs for this release")
+        if choice == "i":
+            # One code PR can reference several docs PRs, so dedupe the
+            # numbers while keeping the order they were reported in.
+            numbers = ", ".join(
+                dict.fromkeys(f"esphome#{code_pr.number}" for code_pr, _ in unmerged)
+            )
+            gprint(
+                f"Ignoring {docs_count} unmerged docs PR(s); shipping "
+                f"{numbers} undocumented",
+                fg="yellow",
+            )
+            return
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):

@@ -7,6 +7,10 @@ from the code PRs actually going into the cut, reads the docs PR(s) each one
 links to, and blocks while a *confirmed* pair (both bodies reference each other)
 has an unmerged docs PR. One-way references are reported but never block.
 
+A blocking pair raises a three-way ``click.prompt`` (``y`` check again, ``i``
+ignore and cut anyway because the docs land later, ``n`` abort). ``i`` touches
+no milestone: it only reports which code PRs ship undocumented and returns.
+
 ``cutting`` imports ``.project``, which instantiates every ``Project`` at import
 time and asserts each configured path is a directory. The ``modules`` fixture
 writes a temp ``config.json`` whose paths point at real directories so the
@@ -19,7 +23,7 @@ import importlib
 import json
 import types
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 import click
 import pytest
@@ -148,9 +152,36 @@ def _wire(cutting, *, code_repo: FakeRepo, docs_repo: FakeRepo) -> None:
 
 
 def _no_confirm(monkeypatch) -> None:
+    """Fail the test if either prompt style is invoked."""
     monkeypatch.setattr(
-        click, "confirm", lambda *a, **k: pytest.fail("should not prompt")
+        click, "confirm", lambda *a, **k: pytest.fail("should not prompt (confirm)")
     )
+    monkeypatch.setattr(
+        click, "prompt", lambda *a, **k: pytest.fail("should not prompt (prompt)")
+    )
+
+
+def _make_prompt(
+    *answers: str, on_call: Optional[Callable[[], None]] = None
+) -> tuple[Callable[..., str], List[tuple]]:
+    """A fake ``click.prompt`` returning ``answers`` in turn, recording its calls.
+
+    Each call appends ``(text, kwargs)`` to the returned list. ``on_call`` runs
+    before the answer is returned, e.g. to merge a docs PR mid-prompt. Asking
+    more times than there are answers fails the test.
+    """
+    calls: List[tuple] = []
+    remaining = list(answers)
+
+    def prompt(text: str, **kwargs: Any) -> str:
+        calls.append((text, kwargs))
+        if on_call is not None:
+            on_call()
+        if not remaining:
+            pytest.fail("prompted more times than expected")
+        return remaining.pop(0)
+
+    return prompt, calls
 
 
 def test_no_cycle_milestone_passes_without_touching_repos(modules, monkeypatch, capsys):
@@ -277,7 +308,7 @@ def test_one_way_reference_is_reported_but_does_not_block(modules, monkeypatch, 
 
 
 def test_unmerged_docs_pr_blocks_then_passes_on_recheck(modules, monkeypatch, capsys):
-    """The gate blocks, the user merges the docs PR and answers "Check again?",
+    """The gate blocks, the user merges the docs PR and answers "y" to check again,
     and the retry re-fetches (caches cleared) and clears."""
     cutting = modules
     code_repo = FakeRepo(
@@ -301,19 +332,16 @@ def test_unmerged_docs_pr_blocks_then_passes_on_recheck(modules, monkeypatch, ca
     docs_repo = FakeRepo(pulls={7071: docs_pull})
     _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
 
-    prompts = []
-
-    def confirm(text, **kwargs):
-        prompts.append(text)
+    def merge_docs_pr() -> None:
         # The user goes and merges the docs PR before answering.
         docs_pull.merged_at = datetime(2026, 7, 3)
-        return True
 
-    monkeypatch.setattr(click, "confirm", confirm)
+    prompt, calls = _make_prompt("y", on_call=merge_docs_pr)
+    monkeypatch.setattr(click, "prompt", prompt)
 
     cutting._check_linked_docs_prs(VERSION)
 
-    assert len(prompts) == 1 and "Check again?" in prompts[0]
+    assert len(calls) == 1 and "[y] check again" in calls[0][0]
     # Both passes re-fetched instead of reusing the stale cached payloads.
     assert code_repo.pull_request_calls == [17797, 17797]
     assert docs_repo.pull_request_calls == [7071, 7071]
@@ -325,6 +353,7 @@ def test_unmerged_docs_pr_blocks_then_passes_on_recheck(modules, monkeypatch, ca
 
 
 def test_unmerged_docs_pr_declining_recheck_aborts(modules, monkeypatch, capsys):
+    """Answering "n" aborts the cut with the unmerged-docs error."""
     cutting = modules
     code_repo = FakeRepo(
         milestones=[MILESTONE],
@@ -339,10 +368,13 @@ def test_unmerged_docs_pr_declining_recheck_aborts(modules, monkeypatch, capsys)
         pulls={7071: FakePull(7071, body=_docs_body(17797), repo="esphome.io")}
     )
     _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
-    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+    prompt, calls = _make_prompt("n")
+    monkeypatch.setattr(click, "prompt", prompt)
 
     with pytest.raises(EsphomeReleaseError, match="unmerged docs PRs"):
         cutting._check_linked_docs_prs(VERSION)
+
+    assert len(calls) == 1
 
 
 def test_shared_docs_pr_counted_once(modules, monkeypatch, capsys):
@@ -374,7 +406,8 @@ def test_shared_docs_pr_counted_once(modules, monkeypatch, capsys):
         }
     )
     _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
-    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+    prompt, _ = _make_prompt("n")
+    monkeypatch.setattr(click, "prompt", prompt)
 
     with pytest.raises(EsphomeReleaseError):
         cutting._check_linked_docs_prs(VERSION)
@@ -408,7 +441,8 @@ def test_blocking_and_unconfirmed_reported_together(modules, monkeypatch, capsys
         }
     )
     _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
-    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+    prompt, _ = _make_prompt("n")
+    monkeypatch.setattr(click, "prompt", prompt)
 
     with pytest.raises(EsphomeReleaseError):
         cutting._check_linked_docs_prs(VERSION)
@@ -416,6 +450,150 @@ def test_blocking_and_unconfirmed_reported_together(modules, monkeypatch, capsys
     out = capsys.readouterr().out
     assert "1 one-way docs PR reference(s)" in out
     assert "1 unmerged docs PR(s)" in out
+
+
+def _unmerged_single(cutting, number: int = 17797, docs_number: int = 7071):
+    """Wire one code PR with one confirmed, unmerged docs PR; return the docs PR."""
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(number)],
+        pulls={
+            number: FakePull(
+                number, merged_at=datetime(2026, 7, 1), body=_back_link(docs_number)
+            )
+        },
+    )
+    docs_pull = FakePull(docs_number, body=_docs_body(number), repo="esphome.io")
+    docs_repo = FakeRepo(pulls={docs_number: docs_pull})
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    return code_repo, docs_repo
+
+
+def test_ignore_returns_and_reports_without_rechecking(modules, monkeypatch, capsys):
+    """Answering "i" lets the cut through, names what ships undocumented, and
+    does not loop: exactly one prompt and one fetch per repo."""
+    cutting = modules
+    code_repo, docs_repo = _unmerged_single(cutting)
+    prompt, calls = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    assert cutting._check_linked_docs_prs(VERSION) is None
+
+    assert len(calls) == 1
+    assert code_repo.pull_request_calls == [17797]
+    assert docs_repo.pull_request_calls == [7071]
+    out = capsys.readouterr().out
+    assert "Ignoring 1 unmerged docs PR(s); shipping esphome#17797 undocumented" in out
+
+
+def test_prompt_offers_y_i_n_defaulting_to_check_again(modules, monkeypatch, capsys):
+    """The gate passes the exact Choice, default and prompt text."""
+    cutting = modules
+    _unmerged_single(cutting)
+    prompt, calls = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    text, kwargs = calls[0]
+    assert "[i] ignore" in text
+    assert "[y] check again" in text
+    assert "[n] abort" in text
+    assert isinstance(kwargs["type"], click.Choice)
+    assert list(kwargs["type"].choices) == ["y", "i", "n"]
+    assert kwargs["default"] == "y"
+    assert kwargs["show_default"] is True
+
+
+def test_ignore_dedupes_code_pr_with_several_docs_prs(modules, monkeypatch, capsys):
+    """One code PR referencing two unmerged docs PRs is listed once in the
+    "shipping" line while the docs PRs are still counted individually."""
+    cutting = modules
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(20347)],
+        pulls={
+            20347: FakePull(
+                20347,
+                merged_at=datetime(2026, 7, 1),
+                body=_back_link(7564) + _back_link(7565),
+            )
+        },
+    )
+    docs_repo = FakeRepo(
+        pulls={
+            7564: FakePull(7564, body=_docs_body(20347), repo="esphome.io"),
+            7565: FakePull(7565, body=_docs_body(20347), repo="esphome.io"),
+        }
+    )
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    prompt, calls = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    assert len(calls) == 1
+    out = capsys.readouterr().out
+    assert "Ignoring 2 unmerged docs PR(s); shipping esphome#20347 undocumented" in out
+    assert "esphome#20347, esphome#20347" not in out
+
+
+def test_ignore_lists_every_code_pr_in_order(modules, monkeypatch, capsys):
+    """Several code PRs (sharing a docs PR or not) are comma-joined in the order
+    they were reported."""
+    cutting = modules
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(20347), FakeIssue(20348), FakeIssue(20350)],
+        pulls={
+            20347: FakePull(
+                20347, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
+            ),
+            20348: FakePull(
+                20348, merged_at=datetime(2026, 7, 1), body=_back_link(7564)
+            ),
+            20350: FakePull(
+                20350, merged_at=datetime(2026, 7, 1), body=_back_link(7565)
+            ),
+        },
+    )
+    docs_repo = FakeRepo(
+        pulls={
+            7564: FakePull(
+                7564, body=_docs_body(20347) + _docs_body(20348), repo="esphome.io"
+            ),
+            7565: FakePull(7565, body=_docs_body(20350), repo="esphome.io"),
+        }
+    )
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    prompt, _ = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    out = capsys.readouterr().out
+    assert (
+        "Ignoring 2 unmerged docs PR(s); shipping "
+        "esphome#20347, esphome#20348, esphome#20350 undocumented"
+    ) in out
+
+
+def test_ignore_on_second_pass_after_checking_again(modules, monkeypatch, capsys):
+    """Answering y re-checks (still unmerged), then i on the next pass lets the cut
+    through. Both passes re-fetched and the ignore line is printed once."""
+    cutting = modules
+    code_repo, docs_repo = _unmerged_single(cutting)
+    prompt, calls = _make_prompt("y", "i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    assert len(calls) == 2
+    assert code_repo.pull_request_calls == [17797, 17797]
+    assert docs_repo.pull_request_calls == [7071, 7071]
+    out = capsys.readouterr().out
+    assert out.count("Ignoring 1 unmerged docs PR(s)") == 1
+    assert out.count("Error: Found 1 unmerged docs PR(s)") == 2
 
 
 def _stub_cut(cutting, monkeypatch, order: list) -> None:
