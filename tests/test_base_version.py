@@ -238,3 +238,29 @@ def test_latest_release_stable_uses_single_lookup(modules, tmp_path):
     proj._repo = FakeReleasesRepo(latest_tag="2026.6.3", all_tags=[])
 
     assert proj.latest_release(include_prereleases=False) == Version.parse("2026.6.3")
+
+
+@pytest.mark.parametrize(
+    ("func", "version"),
+    [("publish_beta_release", "2026.7.0b2"), ("publish_release", "2026.7.2")],
+)
+def test_publish_with_explicit_base_skips_prompt(modules, monkeypatch, func, version):
+    """A base from the cut is forwarded as is, with confirmation passed on."""
+    _, cutting = modules
+
+    def no_prompt(*a, **k):
+        raise AssertionError("must not prompt for the base")
+
+    monkeypatch.setattr(cutting, "_prompt_base_version", no_prompt)
+    published = {}
+    monkeypatch.setattr(
+        cutting, "_publish_release", lambda **kwargs: published.update(kwargs)
+    )
+
+    base = Version.parse("2026.6.0")
+    getattr(cutting, func)(
+        Version.parse(version), projects=[FakePublishProject()], base=base, confirmed=True
+    )
+
+    assert published["base"] == base
+    assert published["confirmed"] is True

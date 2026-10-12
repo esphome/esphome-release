@@ -1181,7 +1181,7 @@ def _docs_update_supporters(*, version: Version):
         EsphomeDocsProject.commit(f"Update supporters for {version}", ignore_empty=True)
 
 
-def cut_beta_release(version: Version):
+def cut_beta_release(version: Version) -> Version:
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
@@ -1235,9 +1235,10 @@ def cut_beta_release(version: Version):
         for proj in [EsphomeProject, EsphomeDocsProject]:
             with proj.workon(Branch.DEV):
                 proj.push()
+    return base
 
 
-def cut_release(version: Version):
+def cut_release(version: Version) -> Version:
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
@@ -1271,6 +1272,7 @@ def cut_release(version: Version):
     _create_prs(version=version, base=base, target_branch=Branch.STABLE)
     _close_cycle_milestone(version=version, next_version=version.next_patch_version)
     _mark_cherry_picked(cherry_picked)
+    return base
 
 
 def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchType):
@@ -1313,9 +1315,11 @@ def _publish_release(
     head_branch: BranchType,
     prerelease: bool,
     projects: list[Project],
+    confirmed: bool = False,
 ):
     update_local_copies()
-    confirm(f"Publish version {version}?")
+    if not confirmed:
+        confirm(f"Publish version {version}?")
     for proj in projects:
         # For first beta or first main release, use link instead of generating changelog for EsphomeProject
         if use_website_link_for_release(
@@ -1350,17 +1354,25 @@ def _publish_release(
             proj.create_release(version, prerelease=prerelease, body=changelog_md)
 
 
-def publish_beta_release(version: Version, projects: list[Project]):
+def publish_beta_release(
+    version: Version,
+    projects: list[Project],
+    *,
+    base: Version | None = None,
+    confirmed: bool = False,
+):
     if not version.beta:
         raise EsphomeReleaseError("Must be beta release!")
 
-    base = _prompt_base_version(version)
+    if base is None:
+        base = _prompt_base_version(version)
     _publish_release(
         version=version,
         base=base,
         head_branch=Branch.BETA,
         prerelease=True,
         projects=projects,
+        confirmed=confirmed,
     )
     for proj in projects:
         with proj.workon(Branch.DEV):
@@ -1369,17 +1381,25 @@ def publish_beta_release(version: Version, projects: list[Project]):
             proj.push()
 
 
-def publish_release(version: Version, projects: list[Project]):
+def publish_release(
+    version: Version,
+    projects: list[Project],
+    *,
+    base: Version | None = None,
+    confirmed: bool = False,
+):
     if version.beta or version.dev:
         raise EsphomeReleaseError("Must be full release!")
 
-    base = _prompt_base_version(version)
+    if base is None:
+        base = _prompt_base_version(version)
     _publish_release(
         version=version,
         base=base,
         head_branch=Branch.STABLE,
         prerelease=False,
         projects=projects,
+        confirmed=confirmed,
     )
     for proj in projects:
         with proj.workon(Branch.BETA):

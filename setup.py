@@ -12,6 +12,7 @@ setup(
     name="esphomerelease",
     version="1.0",
     packages=["esphomerelease"],
+    package_data={"esphomerelease": ["esphome-logo.png"]},
     install_requires=REQUIRES,
     entry_points={"console_scripts": ["esphomerelease = esphomerelease.__main__:main"]},
 )

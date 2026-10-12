@@ -215,7 +215,8 @@ def test_cut_release_propagates_after_updating(cutting, monkeypatch):
     order = []
     _stub_cut_helpers(cutting, monkeypatch, order)
 
-    cutting.cut_release(Version.parse("2026.6.1"))
+    base = cutting.cut_release(Version.parse("2026.6.1"))
+    assert base == Version.parse("2026.5.0")
     assert order == ["update", "propagate"]
 
 
@@ -229,7 +230,8 @@ def test_cut_beta_release_propagates_after_updating(cutting, monkeypatch):
         cutting, "_open_next_cycle_milestone", lambda v: opened.append(v)
     )
 
-    cutting.cut_beta_release(Version.parse("2026.6.0b2"))
+    base = cutting.cut_beta_release(Version.parse("2026.6.0b2"))
+    assert base == Version.parse("2026.5.0")
     assert order == ["update", "propagate"]
     # Only the first beta opens the next cycle's milestone.
     assert opened == []
@@ -254,7 +256,8 @@ def test_cut_first_beta_propagates_after_updating(cutting, monkeypatch):
 
     monkeypatch.setattr(cutting.click, "prompt", lambda *a, **k: "2026.7.0-dev")
 
-    cutting.cut_beta_release(Version.parse("2026.6.0b1"))
+    base = cutting.cut_beta_release(Version.parse("2026.6.0b1"))
+    assert base == Version.parse("2026.5.0")
     assert order == ["update", "propagate"]
     assert opened == [Version.parse("2026.6.0b1")]
 
@@ -279,6 +282,28 @@ def test_publish_only_updates_local_copies(cutting, monkeypatch):
     )
 
     assert order == ["update"]
+
+
+def test_publish_release_confirmation(cutting, monkeypatch):
+    """The prompt is asked by default and skipped when already confirmed."""
+    from esphomerelease.model import Branch, Version
+
+    asked = []
+    monkeypatch.setattr(cutting, "update_local_copies", lambda: None)
+    monkeypatch.setattr(cutting, "confirm", lambda text: asked.append(text))
+    kwargs = dict(
+        version=Version.parse("2026.6.0b2"),
+        base=Version.parse("2026.6.0b1"),
+        head_branch=Branch.BETA,
+        prerelease=True,
+        projects=[],
+    )
+
+    cutting._publish_release(**kwargs)
+    assert asked == ["Publish version 2026.6.0b2?"]
+
+    cutting._publish_release(**kwargs, confirmed=True)
+    assert asked == ["Publish version 2026.6.0b2?"]
 
 
 def test_discard_local_changes_leaves_clean_repos_alone(cutting, monkeypatch):

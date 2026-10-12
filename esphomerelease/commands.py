@@ -8,7 +8,7 @@ import click
 from github3.issues.label import Label
 from github3.repos import Repository
 
-from . import changelog, cutting
+from . import changelog, ci_watch, cutting
 from .config import CONFIG
 from .docs import gen_supporters
 from .github import get_session
@@ -116,14 +116,23 @@ def _resolve_version(value: str) -> Version:
 
 @cli.command(help=f"Cut a release. {VERSION_ARG_HELP}")
 @click.argument("version")
-def cut(version):
+@click.option(
+    "--watch/--no-watch",
+    default=True,
+    help="After cutting, watch CI on the release PRs, send desktop "
+    "notifications and offer to publish once it passes.",
+)
+def cut(version, watch):
     version = _resolve_version(version)
     if version.beta:
-        cutting.cut_beta_release(version)
+        base = cutting.cut_beta_release(version)
     else:
-        cutting.cut_release(version)
+        base = cutting.cut_release(version)
 
     _commit_user_cache_if_changed()
+
+    if watch:
+        ci_watch.watch_release_ci(version, base=base)
 
 
 def _pending_release_version() -> Version:
