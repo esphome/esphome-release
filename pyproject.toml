@@ -40,14 +40,15 @@ target-version = "py312"
 select = ["E", "W", "F", "I", "UP", "B", "C4", "FURB", "ISC", "PERF", "PIE", "PL", "PT", "PTH", "RET", "RUF", "SIM"]
 ignore = [
   "PLC0415", # import-outside-top-level: lazy imports keep `project` config loading off the import path
-  "PLR0911", # too-many-return-statements
   "PLR0912", # too-many-branches
   "PLR0913", # too-many-arguments
-  "PLR0915", # too-many-statements
-  "PLR0917", # too-many-positional-arguments
   "PLR2004", # magic-value-comparison
   "PLW0603", # global-statement
-  "PLW1510", # subprocess-run-without-check: callers inspect returncode themselves
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "PLR0917", # too-many-positional-arguments: pytest fixtures arrive as positional parameters
 ]
 
 [tool.ruff.lint.isort]

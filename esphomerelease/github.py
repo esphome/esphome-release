@@ -26,6 +26,7 @@ def _token_from_gh_cli() -> str:
             ["gh", "auth", "token"],
             capture_output=True,
             text=True,
+            check=False,
         )
     except FileNotFoundError:
         raise EsphomeReleaseError(

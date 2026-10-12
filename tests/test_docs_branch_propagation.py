@@ -43,6 +43,7 @@ def _is_ancestor(cwd, ancestor, branch):
             ["git", "merge-base", "--is-ancestor", ancestor, branch],
             cwd=str(cwd),
             capture_output=True,
+            check=False,
         ).returncode
         == 0
     )

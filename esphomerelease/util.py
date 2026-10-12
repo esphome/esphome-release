@@ -21,14 +21,14 @@ def copy_clipboard(text):
 
     Used for inserting changelog to clipboard.
     """
-    if subprocess.run("pbcopy", input=text.encode()).returncode != 0:
+    if subprocess.run("pbcopy", input=text.encode(), check=False).returncode != 0:
         print("---------- START COPY ----------")
         print(text)
         print("---------- STOP COPY ----------")
 
 
 def open_vscode(*paths):
-    subprocess.run([CONFIG.get("editor", "code"), *paths])
+    subprocess.run([CONFIG.get("editor", "code"), *paths], check=False)
 
 
 def gprint(s, *args, fg="green"):
@@ -276,7 +276,7 @@ def execute_command(*args: str, **kwargs: Any) -> bytes:
             if process.poll() is not None:
                 break
     else:
-        process = cast("Any", subprocess.run(args, **kwargs))
+        process = cast("Any", subprocess.run(args, check=False, **kwargs))
 
         if show:
             print(process.stdout.decode())

@@ -15,7 +15,7 @@ working copy — mirroring ``milestone.py``.
 from .model import Version
 
 
-def resolve_changelog_labels(
+def resolve_changelog_labels(  # noqa: PLR0911 - one early return per label rule reads clearest
     labels: list[str],
     milestone_title: str | None,
     base_version: Version,
