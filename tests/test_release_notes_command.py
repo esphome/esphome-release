@@ -16,6 +16,7 @@ def commands(cutting: Any, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     commands_mod = importlib.import_module("esphomerelease.commands")
     importlib.reload(commands_mod)
     monkeypatch.setattr(commands_mod.changelog, "generate", lambda **kwargs: "CHANGELOG")
+    monkeypatch.setattr(commands_mod.sys, "platform", "linux")
     return commands_mod
 
 
@@ -59,3 +60,19 @@ def test_head_ref_argument_skips_prompt(commands: ModuleType, monkeypatch: pytes
     assert result.exit_code == 0, result.output
     assert asked == []
     assert captured["head"] is Branch.STABLE
+
+
+def test_macos_copies_notes_to_clipboard(commands: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    copied: list[str] = []
+    monkeypatch.setattr(commands.sys, "platform", "darwin")
+    monkeypatch.setattr(commands, "copy_clipboard", copied.append)
+    _record_prompts(monkeypatch, {})
+
+    result = CliRunner().invoke(
+        commands.cli,
+        ["release-notes", "--base-ref", "2026.6.0", "--head-ref", "stable", "--head-version", "2026.6.1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert copied == ["CHANGELOG"]
+    assert "copied to your clipboard" in result.output

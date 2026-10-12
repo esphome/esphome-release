@@ -1,6 +1,7 @@
 import functools
 import glob
 import json
+import sys
 from pathlib import Path
 
 import click
@@ -236,9 +237,7 @@ def release_notes(with_sections, include_author, base_ref, head_ref, head_versio
         include_author=include_author,
     )
 
-    from sys import platform
-
-    if platform == "darwin":
+    if sys.platform == "darwin":
         copy_clipboard(text)
         gprint("Changelog has been copied to your clipboard. Please paste it in.")
     else:

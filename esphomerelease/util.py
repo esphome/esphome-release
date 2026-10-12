@@ -128,7 +128,7 @@ def process_asynchronously(jobs, heading: str | None = None, num_threads: int = 
 
 def _discard_local_changes():
     """Reset any uncommitted work in the code and docs repos, after asking."""
-    from .project import EsphomeDocsProject, EsphomeProject
+    from .project import EsphomeDocsProject, EsphomeProject  # noqa: PLC0415 - project imports util
 
     for project in (EsphomeProject, EsphomeDocsProject):
         if not project.has_local_changes:
@@ -153,7 +153,7 @@ def update_local_copies():
     work and pulls. Branch-to-branch merges belong in
     :func:`propagate_docs_current_branch`, which pushes what it creates.
     """
-    from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject
+    from .project import EsphomeDocsProject, EsphomeHassioProject, EsphomeProject  # noqa: PLC0415 - project imports util
 
     _discard_local_changes()
 
@@ -178,7 +178,7 @@ def propagate_docs_current_branch():
     nothing to propagate is a no-op - and a branch left ahead by an earlier
     interrupted run gets pushed here.
     """
-    from .project import EsphomeDocsProject
+    from .project import EsphomeDocsProject  # noqa: PLC0415 - project imports util
 
     gprint("Propagating docs current branch")
     for branch in (Branch.DEV, Branch.BETA):
@@ -189,7 +189,7 @@ def propagate_docs_current_branch():
 
 
 def checkout_dev():
-    from .project import EsphomeDocsProject, EsphomeProject
+    from .project import EsphomeDocsProject, EsphomeProject  # noqa: PLC0415 - project imports util
 
     gprint("Checking out dev again...")
     EsphomeProject.checkout("dev")

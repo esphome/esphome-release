@@ -438,10 +438,13 @@ def _open_next_cycle_milestone(version: Version):
         proj.ensure_milestone(title, due_on=due_on)
 
 
+MONTHS_PER_YEAR = 12
+
+
 def _next_cycle_year_month(version: Version) -> tuple[int, int]:
     """Year and month of the cycle that follows ``version`` (handles December)."""
     year, month = version.major, version.minor + 1
-    if month > 12:
+    if month > MONTHS_PER_YEAR:
         year, month = year + 1, 1
     return year, month
 

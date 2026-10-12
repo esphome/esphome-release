@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
@@ -141,7 +142,7 @@ def fetch_statuses(prs: list[WatchedPr]) -> list[PrStatus]:
         headers={"Authorization": f"bearer {get_token()}"},
         timeout=GRAPHQL_TIMEOUT,
     )
-    if resp.status_code != 200:
+    if resp.status_code != HTTPStatus.OK:
         raise EsphomeReleaseError(f"GitHub GraphQL request failed: HTTP {resp.status_code}")
     payload = resp.json()
     if payload.get("errors"):

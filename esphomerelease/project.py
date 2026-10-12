@@ -16,6 +16,7 @@ from github3.repos.repo import Repository
 from . import util
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
+from .github import get_session
 from .model import Branch, BranchType, Version
 from .util import confirm, execute_command, gprint, process_asynchronously
 
@@ -103,8 +104,6 @@ class Project:
         """Return the repository as a git object"""
         # Load lazily
         if self._repo is None:
-            from esphomerelease.github import get_session
-
             self._repo = get_session().repository("esphome", self._repo_name)
         return self._repo
 

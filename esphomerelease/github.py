@@ -1,3 +1,4 @@
+import functools
 import subprocess
 from datetime import UTC, datetime
 
@@ -6,9 +7,6 @@ from github3 import GitHub
 
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
-
-GITHUB_SESSION = None
-GITHUB_TOKEN: str | None = None
 
 # The gh OAuth token needs the `repo` scope to create releases and pull
 # requests. Without it the API answers 403 instead of anything descriptive.
@@ -50,6 +48,7 @@ def _token_from_gh_cli() -> str:
     return token
 
 
+@functools.cache
 def get_token() -> str:
     """Return the GitHub token to authenticate with, resolving it once.
 
@@ -57,28 +56,17 @@ def get_token() -> str:
     the plaintext config.json, and revoking access stays a `gh` concern. Falls
     back to the optional `github_token` config key when gh cannot supply one.
     """
-    global GITHUB_TOKEN
-
-    if GITHUB_TOKEN is not None:
-        return GITHUB_TOKEN
-
     try:
-        token = _token_from_gh_cli()
+        return _token_from_gh_cli()
     except EsphomeReleaseError:
         token = CONFIG.get("github_token") or ""
         if not token:
             raise
-
-    GITHUB_TOKEN = token
-    return GITHUB_TOKEN
+        return token
 
 
+@functools.cache
 def get_session() -> GitHub:
-    global GITHUB_SESSION
-
-    if GITHUB_SESSION is not None:
-        return GITHUB_SESSION
-
     token = get_token()
 
     # Increase read timeout for creating PRs with long bodies.
@@ -90,5 +78,4 @@ def get_session() -> GitHub:
     reset = datetime.fromtimestamp(rate_limit["reset"], tz=UTC)
     print(f"{remaining}/{limit} rate limit remaining")
     print(f"Reset at {reset} UTC (in {reset - datetime.now(UTC)})")
-    GITHUB_SESSION = gh
-    return GITHUB_SESSION
+    return gh

@@ -26,11 +26,14 @@ class FakeCompletedProcess:
 
 
 @pytest.fixture(autouse=True)
-def reset_globals(monkeypatch):
+def reset_caches(monkeypatch):
     """Clear the process-lifetime caches so each test resolves afresh."""
-    monkeypatch.setattr(github_mod, "GITHUB_TOKEN", None)
-    monkeypatch.setattr(github_mod, "GITHUB_SESSION", None)
+    github_mod.get_token.cache_clear()
+    github_mod.get_session.cache_clear()
     monkeypatch.delitem(github_mod.CONFIG, "github_token", raising=False)
+    yield
+    github_mod.get_token.cache_clear()
+    github_mod.get_session.cache_clear()
 
 
 @pytest.fixture
