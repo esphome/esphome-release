@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 esphomerelease = "esphomerelease.__main__:main"
+espr = "esphomerelease.__main__:main"
 
 [tool.setuptools]
 packages = ["esphomerelease"]

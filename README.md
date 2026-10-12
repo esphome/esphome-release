@@ -4,7 +4,7 @@ This repo contains ESPHome's 90% automated release scripts.
 
 See [NOTES.md](NOTES.md) for more information on the release process.
 
-To install use the command `uv sync`, then run the tool with `uv run esphomerelease`. Lint with `uv run ruff check`, format with `uv run ruff format`, type check with `uv run ty check` and test with `uv run pytest`.
+To install use the command `uv sync`, then run the tool with `uv run esphomerelease` (or the shorter alias `uv run espr`). Lint with `uv run ruff check`, format with `uv run ruff format`, type check with `uv run ty check` and test with `uv run pytest`.
 
 The scripts use a configuration file with the local paths to the various repos in the `config.json` file.
 
