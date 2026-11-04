@@ -249,7 +249,12 @@ def release_notes(with_sections, include_author, base_ref, head_ref, head_versio
 
 @cli.command(help="Cherry-pick from milestone")
 @click.argument("milestone")
-def milestone_cherry_pick(milestone):
+@click.option(
+    "--target",
+    default=None,
+    help="Release branch the picks land on, used to apply release-cherry-pick overrides from PR bodies",
+)
+def milestone_cherry_pick(milestone, target):
     for proj in [EsphomeProject, EsphomeDocsProject]:
         milestone_obj = proj.get_milestone_by_title(milestone)
         if milestone_obj is None:
@@ -257,7 +262,7 @@ def milestone_cherry_pick(milestone):
             continue
         if not click.confirm(f"Cherry-pick commits for {proj.name} on current branch?", default=True):
             continue
-        ret = proj.cherry_pick_from_milestone(milestone_obj)
+        ret = proj.cherry_pick_from_milestone(milestone_obj, target_branch=target)
         if click.confirm("Label picked commits as cherry-picked?", default=True):
             proj.mark_pulls_cherry_picked(ret)
 

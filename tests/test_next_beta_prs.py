@@ -107,8 +107,12 @@ class FakePull:
         merged_at: datetime | None = None,
         login: str = "alice",
         merge_commit_sha: str | None = None,
+        body: str | None = None,
+        merged_by: object | None = None,
     ):
         self.number = number
+        self.body = body
+        self.merged_by = merged_by
         self.title = title
         self.html_url = f"https://github.com/esphome/esphome/pull/{number}"
         self.user = types.SimpleNamespace(login=login)

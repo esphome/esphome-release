@@ -2,6 +2,7 @@
 
 import datetime
 import re
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
@@ -259,7 +260,7 @@ def _strategy_cherry_pick(project: Project, version: Version, *, base: Branch):
 
     project.checkout(base)
     project.checkout_new_branch(branch_name)
-    ret = project.cherry_pick_from_milestone(milestone)
+    ret = project.cherry_pick_from_milestone(milestone, target_branch=project.lookup_branch(base))
     project.bump_version(version)
     return ret
 
@@ -279,7 +280,7 @@ def _strategy_merge_then_cherry_pick(project: Project, version: Version, *, base
     project.checkout(base)
     project.checkout_new_branch(branch_name)
     project.merge(head, strategy_option="theirs")
-    ret = project.cherry_pick_from_milestone(milestone)
+    ret = project.cherry_pick_from_milestone(milestone, target_branch=project.lookup_branch(base))
     project.bump_version(version)
     return ret
 
@@ -923,7 +924,7 @@ def _generate_release_notes(version: Version) -> None:
     """
     stable = version.replace(patch=0, beta=0, dev=False)
     gprint(f"Generating the release notes for {stable}")
-    if not _run_docs_command(RELEASE_NOTES_SCRIPT, str(stable)):
+    if not _run_docs_command(sys.executable, RELEASE_NOTES_SCRIPT, str(stable)):
         return
     prompts_dir = Path("script") / "cache" / str(stable) / "prompts"
     for name in RELEASE_NOTES_PROMPTS:
@@ -940,7 +941,7 @@ def _generate_release_notes(version: Version) -> None:
             f"Read {prompt} and follow the instructions in it.",
         ):
             return
-    _run_docs_command(RELEASE_NOTES_SCRIPT, str(stable), "--assemble", "--blog-only")
+    _run_docs_command(sys.executable, RELEASE_NOTES_SCRIPT, str(stable), "--assemble", "--blog-only")
 
 
 def _docs_update_blog_post(*, version: Version, base: Version) -> tuple[str | None, Path | None]:

@@ -67,6 +67,36 @@ All other stable releases:
 
 The same is repeated for `esphome.io` with `s/dev/next/` and `s/release/current/`
 
+### Pre-resolved cherry-picks
+
+When a PR does not cherry-pick cleanly onto a release branch, the author can prepare a commit with the conflicts
+already resolved and declare it in the PR body with a fenced block, one per target branch:
+
+````markdown
+```release-cherry-pick
+branch: release
+commit: 4f53d5c8471da8081ef2077af36263785672def3
+```
+````
+
+  - `branch` is the release branch the commit applies to (`release` for stable/patch cuts, `beta` for beta cuts).
+  - `commit` is the full 40-character SHA of a single non-merge commit, whose parent is on that branch, containing
+    the whole PR with the conflicts resolved.
+  - Keys are case-insensitive `key: value` lines. Unknown, missing or duplicated keys, a non-40-hex commit, and two
+    blocks for the same branch are errors; on any error every override in that PR is ignored (after an acknowledgement
+    prompt) and the merge commit is used.
+
+When cherry-picking a milestone the cutter resolves all overrides up front. For each override it fetches the commit from
+`origin`, checks it is a single non-merge commit, warns if its parent is not on the current branch, then shows the PR
+author, the commit and `git range-diff` of the PR's merged change against the override. A default-No confirmation is
+required per override; declining (or any failed check) falls back to the PR's merge commit. Overrides for other branches
+are ignored silently. A PR body that mentions cherry-picking and a commit in prose, without a block, is flagged so the
+body gets read.
+
+Anyone who can edit a PR body can write such a block, and GitHub serves fork-network commits by SHA from the parent
+repository, so the SHA is untrusted and is never used without that manual confirmation. `esphomerelease
+milestone-cherry-pick --target <branch>` applies overrides for the given branch.
+
 ## PR Merging and Releasing
 
 The PR on GitHub can be used to let the CI check if everything's ok. When ready, merge the PR (DO NOT SQUASH, branch protection rules should already disallow this).

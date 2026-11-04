@@ -14,6 +14,12 @@ from github3.pulls import PullRequest
 from github3.repos.repo import Repository
 
 from . import util
+from .cherry_pick_override import (
+    CherryPickOverride,
+    mentions_unstructured_override,
+    override_for_branch,
+    parse_overrides,
+)
 from .config import CONFIG
 from .exceptions import EsphomeReleaseError
 from .github import get_session
@@ -313,8 +319,11 @@ class Project:
         self._spawn_subshell(run="git log --oneline -15", print_lines=lines)
         return drifted
 
-    def cherry_pick_from_milestone(self, milestone: Milestone | None) -> list[Issue]:
+    def cherry_pick_from_milestone(self, milestone: Milestone | None, target_branch: str | None = None) -> list[Issue]:
         """Cherry-pick all PRs in a milestone to the current branch.
+
+        ``target_branch`` is the release branch the picks land on; it selects
+        which ``release-cherry-pick`` override (if any) in a PR body applies.
 
         Returns a list of the found PRs (as Issue objects)
         """
@@ -347,17 +356,124 @@ class Project:
         pulls = self.get_prs([issue.number for issue in pick_issues])
         to_pick = sorted(zip(pulls, pick_issues, strict=True), key=lambda obj: obj[0].merged_at)
 
-        for pull, _ in to_pick:
-            gprint(f"Cherry picking {pull.title}: {pull.merge_commit_sha}")
+        # Resolve (and confirm) every override up front so the picks themselves
+        # run unattended, apart from conflict subshells.
+        resolved = [self._resolve_pick_sha(pull, target_branch) for pull, _ in to_pick]
 
-        for pull, _ in to_pick:
-            self.cherry_pick(pull.merge_commit_sha)
+        for (pull, _), sha in zip(to_pick, resolved, strict=True):
+            note = " (override from PR body)" if sha != pull.merge_commit_sha else ""
+            gprint(f"Cherry picking {pull.title}: {sha}{note}")
+
+        for sha in resolved:
+            self.cherry_pick(sha)
 
         picked = [x[1] for x in to_pick]
         # Any PRs the milestone index silently dropped are handled by hand in a
         # subshell (they land after the auto-picked ones, before the version bump).
         drifted = self._resolve_milestone_index_drift(milestone)
         return picked + drifted
+
+    def _resolve_pick_sha(self, pull: PullRequest, target_branch: str | None) -> str:
+        """Pick the commit to cherry-pick for ``pull``.
+
+        This is the PR's merge commit unless its body carries a
+        ``release-cherry-pick`` override for ``target_branch`` that passes
+        :meth:`_verify_override` and is confirmed by the release manager.
+        """
+        merge_sha = pull.merge_commit_sha
+        body = pull.body
+        what = f"#{pull.number} {pull.title} ({pull.html_url})"
+        parsed = parse_overrides(body)
+
+        if parsed.errors:
+            lines = "\n".join(f" - {error}" for error in parsed.errors)
+            gprint(
+                f"Invalid release-cherry-pick block in {what}:\n{lines}\n"
+                "All overrides in this PR are ignored; the merge commit will be used.",
+                fg="red",
+            )
+            confirm("Acknowledge?")
+            return merge_sha
+
+        if target_branch is None and parsed.overrides:
+            gprint(
+                f"{what} has a release-cherry-pick override but no target branch is known, so it is ignored.",
+                fg="yellow",
+            )
+            confirm("Acknowledge?")
+            return merge_sha
+
+        override = override_for_branch(parsed, target_branch) if target_branch is not None else None
+        if override is None:
+            if mentions_unstructured_override(body):
+                gprint(
+                    f"{what}: the body mentions a replacement commit in prose; use a "
+                    "release-cherry-pick block, see NOTES.md; check the PR body before continuing.",
+                    fg="yellow",
+                )
+                confirm("Acknowledge?")
+            return merge_sha
+
+        return override.commit if self._verify_override(pull, override) else merge_sha
+
+    def _git_ok(self, *args: str) -> bool:
+        """Run a git command that is allowed to fail; True when it succeeded."""
+        try:
+            self.run_git(*args, fail_ok=True, silent=True)
+        except EsphomeReleaseError:
+            return False
+        return True
+
+    def _verify_override(self, pull: PullRequest, override: CherryPickOverride) -> bool:
+        """Check an override commit and ask the release manager to accept it.
+
+        The SHA comes from an editable PR body, so it is untrusted: it is
+        fetched, shape-checked, and shown next to the PR's merged change before
+        a default-No confirmation. Returns True only if the override is accepted.
+        """
+        commit = override.commit
+        merge_sha = pull.merge_commit_sha
+
+        # A failed fetch is fine if the commit is already present locally.
+        self._git_ok("fetch", "origin", commit)
+        if not self._git_ok("cat-file", "-e", f"{commit}^{{commit}}"):
+            gprint(f"Override commit {commit} for #{pull.number} could not be found locally or on origin.", fg="red")
+            confirm("Acknowledge?")
+            return False
+
+        parents = self.run_git("rev-list", "--parents", "-n", "1", commit, silent=True).decode().split()[1:]
+        if len(parents) != 1:
+            gprint(f"Override commit {commit} for #{pull.number} is not a single non-merge commit.", fg="red")
+            confirm("Acknowledge?")
+            return False
+
+        if not self._git_ok("merge-base", "--is-ancestor", f"{commit}^", "HEAD"):
+            gprint(
+                f"Override commit {commit} is not based on the current branch (prepared on another base).",
+                fg="yellow",
+            )
+
+        merged_by = getattr(getattr(pull, "merged_by", None), "login", None)
+        gprint(f"Release-cherry-pick override for #{pull.number}: {pull.title}")
+        print(f"  PR:             {pull.html_url}")
+        print(f"  Author:         {pull.user.login}")
+        if merged_by:
+            print(f"  Merged by:      {merged_by}")
+        print(f"  Branch:         {override.branch}")
+        print(f"  Override:       {commit}")
+        print(f"  Merge commit:   {merge_sha}")
+        self.run_git("log", "-1", "--format=fuller", commit, show=True, silent=True)
+        self.run_git("show", "--stat", "--format=", commit, show=True, silent=True)
+        print(
+            "Range-diff of the PR's merged change against the override: any difference "
+            "beyond conflict resolution is suspicious."
+        )
+        self.run_git("range-diff", f"{merge_sha}^..{merge_sha}", f"{commit}^..{commit}", show=True, silent=True)
+
+        if click.confirm(f"Cherry-pick {commit} instead of {merge_sha} for #{pull.number}?", default=False):
+            return True
+        gprint(f"Using the original merge commit {merge_sha} for #{pull.number}.")
+        return False
 
     def mark_pulls_cherry_picked(self, to_pick: list[Issue]):
         """Mark all PRs cherry-picked by adding a label."""
