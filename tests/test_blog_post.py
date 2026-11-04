@@ -12,6 +12,7 @@ The ``cutting`` and ``docs_git`` fixtures live in ``conftest.py``.
 
 import contextlib
 import datetime
+import sys
 from pathlib import Path
 
 import pytest
@@ -243,8 +244,9 @@ def test_update_blog_post_first_beta_creates_post(cutting, docs_git, monkeypatch
     assert "Created release notes blog post esphome-2026-7.mdx" in messages
     # The skeleton is handed straight to the docs repo's release notes
     # generator, before the post is opened for review.
-    assert (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0") in commands
+    assert (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0") in commands
     assert (
+        sys.executable,
         cutting.RELEASE_NOTES_SCRIPT,
         "2026.7.0",
         "--assemble",
@@ -394,9 +396,9 @@ def test_generate_release_notes_runs_every_step(cutting, monkeypatch):
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         *[_claude_call(cutting, name) for name in cutting.RELEASE_NOTES_PROMPTS],
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
     ]
     # Output is streamed, and a failure is reported rather than prompting for
     # an interactive retry of a command this cut can do without.
@@ -413,9 +415,9 @@ def test_generate_release_notes_skips_prompts_that_were_not_written(cutting, mon
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, "contributors.txt"),
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
     ]
     assert "No overview_and_highlights.txt prompt was generated, skipping it" in messages
     assert "No breaking_changes.txt prompt was generated, skipping it" in messages
@@ -427,13 +429,13 @@ def test_generate_release_notes_stops_when_the_prompts_fail(cutting, monkeypatch
 
     _write_prompts(cutting, cutting.RELEASE_NOTES_PROMPTS)
     commands, _, messages = _fake_docs_commands(
-        cutting, monkeypatch, fail_on=lambda args: args[0] == cutting.RELEASE_NOTES_SCRIPT
+        cutting, monkeypatch, fail_on=lambda args: args[1] == cutting.RELEASE_NOTES_SCRIPT
     )
 
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
-    assert commands == [(cutting.RELEASE_NOTES_SCRIPT, "2026.7.0")]
-    assert any(msg.startswith(f"Running {cutting.RELEASE_NOTES_SCRIPT} failed") for msg in messages)
+    assert commands == [(sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0")]
+    assert any(msg.startswith(f"Running {sys.executable} failed") for msg in messages)
 
 
 def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatch):
@@ -448,7 +450,7 @@ def test_generate_release_notes_stops_when_the_ai_pass_fails(cutting, monkeypatc
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
     ]
     assert any(msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages)
@@ -479,11 +481,11 @@ def test_generate_release_notes_skips_only_the_companion_summary(cutting, monkey
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, "overview_and_highlights.txt"),
         _claude_call(cutting, "breaking_changes.txt"),
         _claude_call(cutting, "contributors.txt"),
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0", "--assemble", "--blog-only"),
     ]
     assert "No companion_summary.txt prompt was generated, skipping it" in messages
 
@@ -520,7 +522,7 @@ def test_generate_release_notes_survives_a_missing_cli(cutting, monkeypatch):
     cutting._generate_release_notes(Version.parse("2026.7.0b1"))
 
     assert commands == [
-        (cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
+        (sys.executable, cutting.RELEASE_NOTES_SCRIPT, "2026.7.0"),
         _claude_call(cutting, cutting.RELEASE_NOTES_PROMPTS[0]),
     ]
     assert any(msg.startswith(f"Running {cutting.CLAUDE_CLI} failed") for msg in messages)
