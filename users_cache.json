@@ -8627,6 +8627,10 @@
     "login": "jazzmonger",
     "name": "Jeff"
   },
+  "52178922": {
+    "login": "adamsthws",
+    "name": "Adam Matthews"
+  },
   "52343790": {
     "login": "kuchel77",
     "name": "Mark Kuchel"
@@ -9717,6 +9721,10 @@
   },
   "339771724": {
     "login": "jeedom-ansible",
+    "name": null
+  },
+  "345758275": {
+    "login": "NG3D-Druck",
     "name": null
   }
 }
