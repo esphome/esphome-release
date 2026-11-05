@@ -191,3 +191,16 @@ def test_get_session_uses_gh_token(gh_calls, monkeypatch, capsys):
     assert github_mod.get_session() is session
     assert len(FakeGitHub.instances) == 1
     assert len(calls) == 1
+
+
+def test_get_session_uses_retrying_session(gh_calls, monkeypatch):
+    """The real session class handed to GitHub retries transient failures."""
+    _, results = gh_calls
+    results.append(FakeCompletedProcess(stdout="gho_fromcli\n"))
+    FakeGitHub.instances = []
+    monkeypatch.setattr(github_mod, "GitHub", FakeGitHub)
+
+    session = github_mod.get_session()
+
+    assert isinstance(session.session, github_mod.RetryingGitHubSession)
+    assert session.session.timeout

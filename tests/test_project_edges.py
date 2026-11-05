@@ -124,3 +124,122 @@ def test_spawn_subshell_error_is_printed_and_cwd_restored(
     assert Path.cwd() == tmp_path
     assert "pexpect exploded" in capsys.readouterr().out
     assert confirmed == ["Confirm the problem has been fixed"]
+
+
+def _raise_422() -> Exception:
+    import github3.exceptions
+
+    resp = SimpleNamespace(status_code=422, json=lambda: {"message": "Validation Failed"}, content=b"")
+    return github3.exceptions.UnprocessableEntity(resp)
+
+
+def _new_project(project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome", dev_branch="dev", beta_branch="beta")
+    proj.branch = "bump-1"
+    monkeypatch.setattr(proj, "push", lambda *a, **k: None)
+    monkeypatch.setattr(proj, "pull", lambda: None)
+    monkeypatch.setattr(project_mod.time, "sleep", lambda s: None)
+    monkeypatch.setattr(click, "launch", lambda url: None)
+    return proj
+
+
+class _PrRepo:
+    def __init__(self, outcomes: list[Any], existing: list[Any]) -> None:
+        self.outcomes = outcomes
+        self.existing = existing
+        self.create_calls = 0
+
+    def create_pull(self, *args: Any, **kwargs: Any) -> Any:
+        self.create_calls += 1
+        out = self.outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    def pull_requests(self, **kwargs: Any) -> list[Any]:
+        return self.existing
+
+
+def test_create_pr_uses_existing_pr_after_422(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    existing = SimpleNamespace(number=7, title="T", html_url="u")
+    other = SimpleNamespace(number=8, title="other", html_url="u")
+    proj._repo = _PrRepo([_raise_422()], [other, existing])
+
+    assert proj.create_pr(title="T", target_branch="beta") is existing
+
+
+def test_create_pr_422_without_existing_retries(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    created = SimpleNamespace(number=9, html_url="u")
+    proj._repo = _PrRepo([_raise_422(), created], [])
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: True)
+
+    assert proj.create_pr(title="T", target_branch="beta") is created
+    assert proj._repo.create_calls == 2
+
+
+def test_create_pr_422_declined_raises(project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    proj._repo = _PrRepo([_raise_422()], [])
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+
+    with pytest.raises(EsphomeReleaseError, match="rejected creating the PR"):
+        proj.create_pr(title="T", target_branch="beta")
+
+
+class _ReleaseRepo:
+    def __init__(self, outcomes: list[Any], tagged: Any) -> None:
+        self.outcomes = outcomes
+        self.tagged = tagged
+
+    def create_release(self, tag: str, **kwargs: Any) -> Any:
+        out = self.outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    def release_from_tag(self, tag: str) -> Any:
+        if isinstance(self.tagged, Exception):
+            raise self.tagged
+        return self.tagged
+
+
+def test_create_release_uses_existing_release_after_422(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    proj._repo = _ReleaseRepo([_raise_422()], SimpleNamespace(html_url="u"))
+
+    proj.create_release(Version.parse("2026.6.0"))
+
+
+def test_create_release_422_not_found_retries(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github3.exceptions
+
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    missing = github3.exceptions.NotFoundError(SimpleNamespace(status_code=404, json=dict, content=b""))
+    proj._repo = _ReleaseRepo([_raise_422(), SimpleNamespace(html_url="u")], missing)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: True)
+
+    proj.create_release(Version.parse("2026.6.0"))
+
+
+def test_create_release_422_declined_raises(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github3.exceptions
+
+    proj = _new_project(project_mod, tmp_path, monkeypatch)
+    missing = github3.exceptions.NotFoundError(SimpleNamespace(status_code=404, json=dict, content=b""))
+    proj._repo = _ReleaseRepo([_raise_422()], missing)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+
+    with pytest.raises(EsphomeReleaseError, match="rejected creating the release"):
+        proj.create_release(Version.parse("2026.6.0"))

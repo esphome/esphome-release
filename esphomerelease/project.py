@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import click
+import github3.exceptions
 import pexpect
 from github3.issues.issue import Issue
 from github3.issues.milestone import Milestone
@@ -549,12 +550,30 @@ class Project:
                     found.add(version)
         return sorted(found, reverse=True)
 
+    @staticmethod
+    def _ask_fix_and_retry(action: str, exc: Exception) -> None:
+        """Show the error and let the user fix it on GitHub, or give up."""
+        click.secho(f"GitHub rejected {action}: {exc}", fg="red")
+        if not click.confirm(f"Fix the problem on GitHub, then retry {action}?", default=True):
+            raise EsphomeReleaseError(f"GitHub rejected {action}: {exc}") from exc
+
     def create_pr(self, *, title: str, target_branch: BranchType, body: str | None = None) -> PullRequest:
         target_branch = self.lookup_branch(target_branch)
         self.push(set_upstream=True)
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
-        pr = self.repo.create_pull(title, target_branch, self.branch, body=body)
+        while True:
+            try:
+                pr = self.repo.create_pull(title, target_branch, self.branch, body=body)
+                break
+            except github3.exceptions.UnprocessableEntity as exc:
+                # A retried request may have succeeded the first time.
+                existing = self.get_pr_by_title(title=title, head=f"esphome:{self.branch}", base=target_branch)
+                if existing:
+                    pr = existing[0]
+                    gprint(f"Pull Request #{pr.number} already exists")
+                    break
+                self._ask_fix_and_retry("creating the PR", exc)
         gprint(f"Created Pull Request #{pr.number} from {self.branch} against {target_branch}")
         click.launch(pr.html_url)
         return pr
@@ -578,14 +597,27 @@ class Project:
         # Wait a bit for push to get to GitHub
         time.sleep(1.0)
         tag = f"{version}"
-        rel = self.repo.create_release(
-            tag,
-            target_commitish=self.branch,
-            name=f"{version}",
-            body=body,
-            prerelease=prerelease,
-            draft=draft,
-        )
+        while True:
+            try:
+                rel = self.repo.create_release(
+                    tag,
+                    target_commitish=self.branch,
+                    name=f"{version}",
+                    body=body,
+                    prerelease=prerelease,
+                    draft=draft,
+                )
+                break
+            except github3.exceptions.UnprocessableEntity as exc:
+                # A retried request may have succeeded the first time.
+                try:
+                    rel = self.repo.release_from_tag(tag)
+                except github3.exceptions.NotFoundError:
+                    rel = None
+                if rel is not None:
+                    gprint(f"Release {tag} already exists")
+                    break
+                self._ask_fix_and_retry("creating the release", exc)
 
         if draft:
             url = rel.html_url.replace("/tag/", "/edit/")
