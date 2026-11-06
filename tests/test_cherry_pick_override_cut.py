@@ -171,7 +171,7 @@ def make_project(modules, scenario: Scenario, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(click, "confirm", confirms)
         picked: list[str] = []
         if not real_pick:
-            monkeypatch.setattr(proj, "cherry_pick", picked.append)
+            monkeypatch.setattr(proj, "cherry_pick", lambda sha, **kw: picked.append(sha) or True)
         return proj, confirms, picked
 
     return make
@@ -399,3 +399,40 @@ def test_milestone_cherry_pick_target_option(modules, monkeypatch):
     result = runner.invoke(commands.cli, args, input="y\ny\ny\ny\n")
     assert result.exit_code == 0, result.output
     assert [c[1] for c in calls] == [None, None]
+
+
+@pytest.mark.parametrize("choice", ["drop", "shell"])
+def test_conflicting_pick_can_drop_pr_from_milestone(
+    make_project, scenario: Scenario, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], choice: str
+) -> None:
+    """The PR's merge commit conflicts with ``release``; the user picks drop or shell."""
+    proj, _, _ = make_project(None, real_pick=True)
+    prompts: list[tuple[str, dict]] = []
+
+    def fake_prompt(text: str, **kwargs) -> str:
+        prompts.append((text, kwargs))
+        return choice
+
+    monkeypatch.setattr(click, "prompt", fake_prompt)
+    shells: list[dict] = []
+    monkeypatch.setattr(proj, "_spawn_subshell", lambda **kw: shells.append(kw))
+    issue = proj._repo._issues["closed"][0]
+
+    result = proj.cherry_pick_from_milestone(MILESTONE, target_branch="release")
+
+    assert prompts[0][0] == "Spawn a shell to fix it, or drop PR #7 from the milestone?"
+    assert prompts[0][1]["default"] == "shell"
+    out = capsys.readouterr().out
+    assert "PR #7: Fix thing - https://github.com/esphome/esphome/pull/7" in out
+    if choice == "drop":
+        assert result == []
+        assert issue.milestone_edits == [0]
+        assert shells == []
+        assert "Dropped PR #7 from the milestone" in out
+        # The conflicted pick was aborted, leaving release clean at R1.
+        assert git(scenario.project_dir, "status", "--porcelain") == ""
+        assert git(scenario.project_dir, "rev-parse", "HEAD") == scenario.r1
+    else:
+        assert result == [issue]
+        assert issue.milestone_edits == []
+        assert shells[0]["ask"] is False

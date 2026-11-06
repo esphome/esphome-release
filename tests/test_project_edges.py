@@ -243,3 +243,61 @@ def test_create_release_422_declined_raises(
 
     with pytest.raises(EsphomeReleaseError, match="rejected creating the release"):
         proj.create_release(Version.parse("2026.6.0"))
+
+
+def _fail_cherry_pick(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, pull: Any
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run ``cherry_pick`` with a git failure; return the subshell calls and the git args."""
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+    proj.branch = "release"
+    shells: list[dict[str, Any]] = []
+    git_args: list[str] = []
+
+    def fake_run_git(*args: str, on_fail: Any) -> Any:
+        git_args.extend(args)
+        return on_fail("conflict")
+
+    monkeypatch.setattr(proj, "run_git", fake_run_git)
+    monkeypatch.setattr(proj, "_spawn_subshell", lambda **kw: shells.append(kw))
+    proj.cherry_pick("abc123", pull=pull)
+    return shells, git_args
+
+
+def test_cherry_pick_failure_shows_pr_url(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pull = SimpleNamespace(number=42, title="Fix thing", html_url="https://github.com/esphome/esphome/pull/42")
+
+    shells, git_args = _fail_cherry_pick(project_mod, tmp_path, monkeypatch, pull)
+
+    pr_line = "PR #42: Fix thing - https://github.com/esphome/esphome/pull/42"
+    assert git_args == ["cherry-pick", "abc123"]
+    out = capsys.readouterr().out
+    assert "CHERRY PICK FAILED" in out
+    assert pr_line in out
+    assert shells[0]["print_lines"][1] == pr_line
+
+
+def test_cherry_pick_failure_without_pr(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shells, _ = _fail_cherry_pick(project_mod, tmp_path, monkeypatch, None)
+
+    assert "PR #" not in capsys.readouterr().out
+    assert shells[0]["print_lines"][1] == "To fix, run in the shell that will be spawned:"
+
+
+def test_spawn_subshell_ask_false_skips_confirmation(
+    project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proj = project_mod.Project(path=str(tmp_path / "repo"), shortname="esphome")
+    monkeypatch.setattr(click, "confirm", pytest.fail)
+    monkeypatch.setattr(project_mod.pexpect, "run", lambda cmd: b"")
+    shells: list[str] = []
+    monkeypatch.setattr(project_mod.os, "system", shells.append)
+    monkeypatch.setattr(project_mod, "confirm", lambda text: None)
+
+    proj._spawn_subshell(run="git status", print_lines=[], ask=False)
+
+    assert len(shells) == 1

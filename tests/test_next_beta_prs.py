@@ -339,7 +339,7 @@ def test_cherry_pick_from_milestone_filters_prompts_and_picks_in_order(modules, 
         lambda text, **kwargs: prompts.append(text) or next(answers),
     )
     picked_shas = []
-    monkeypatch.setattr(proj, "cherry_pick", picked_shas.append)
+    monkeypatch.setattr(proj, "cherry_pick", lambda sha, **kw: picked_shas.append(sha) or True)
 
     result = proj.cherry_pick_from_milestone(MILESTONE)
 
@@ -486,7 +486,7 @@ def test_cherry_pick_from_milestone_hands_drift_to_shell(modules, tmp_path, monk
     calls = _capture_subshell(proj, monkeypatch)
 
     picked_shas = []
-    monkeypatch.setattr(proj, "cherry_pick", picked_shas.append)
+    monkeypatch.setattr(proj, "cherry_pick", lambda sha, **kw: picked_shas.append(sha) or True)
 
     result = proj.cherry_pick_from_milestone(_milestone(closed_issues=2))
 

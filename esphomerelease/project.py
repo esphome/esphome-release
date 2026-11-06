@@ -365,10 +365,13 @@ class Project:
             note = " (override from PR body)" if sha != pull.merge_commit_sha else ""
             gprint(f"Cherry picking {pull.title}: {sha}{note}")
 
-        for sha in resolved:
-            self.cherry_pick(sha)
-
-        picked = [x[1] for x in to_pick]
+        # A conflicting PR can be dropped from the milestone instead of fixed;
+        # it is then left out of the cut (and not labelled cherry-picked).
+        picked = [
+            issue
+            for (pull, issue), sha in zip(to_pick, resolved, strict=True)
+            if self.cherry_pick(sha, pull=pull, issue=issue)
+        ]
         # Any PRs the milestone index silently dropped are handled by hand in a
         # subshell (they land after the auto-picked ones, before the version bump).
         drifted = self._resolve_milestone_index_drift(milestone)
@@ -681,8 +684,13 @@ class Project:
         else:
             self.run_git("pull")
 
-    def _spawn_subshell(self, *, run: str, print_lines: list[str]):
-        if not click.confirm("Spawn a shell to fix the problem?", default=True):
+    def _spawn_subshell(self, *, run: str, print_lines: list[str], ask: bool = True):
+        """Spawn a shell in the repo to fix a problem by hand.
+
+        ``ask=False`` skips the "spawn a shell?" confirmation, for callers that
+        already asked.
+        """
+        if ask and not click.confirm("Spawn a shell to fix the problem?", default=True):
             return
         old_cwd = Path.cwd()
         try:
@@ -820,15 +828,41 @@ class Project:
         with self.workon(branch):
             self.push()
 
-    def cherry_pick(self, sha: str):
-        """Cherry-pick a commit by SHA."""
+    def cherry_pick(self, sha: str, pull: PullRequest | None = None, issue: Issue | None = None) -> bool:
+        """Cherry-pick a commit by SHA.
+
+        ``pull`` is the PR the commit belongs to; when given, its URL is shown
+        on failure so the conflicting PR can be opened directly. With its milestone
+        ``issue`` as well, a failed pick can instead be aborted and the PR dropped
+        from the milestone.
+
+        Returns False when the PR was dropped, True otherwise.
+        """
+        pr_line = [f"PR #{pull.number}: {pull.title} - {pull.html_url}"] if pull is not None else []
+        dropped = False
 
         def on_fail(stdout):
+            nonlocal dropped
             gprint("===== CHERRY PICK FAILED ====")
+            for line in pr_line:
+                gprint(line)
+            if pull is not None and issue is not None:
+                choice = click.prompt(
+                    f"Spawn a shell to fix it, or drop PR #{pull.number} from the milestone?",
+                    type=click.Choice(["shell", "drop"]),
+                    default="shell",
+                )
+                if choice == "drop":
+                    self.run_git("cherry-pick", "--abort")
+                    issue.edit(milestone=0)  # 0 clears the milestone in github3
+                    gprint(f"Dropped PR #{pull.number} from the milestone")
+                    dropped = True
+                    return stdout
             self._spawn_subshell(
                 run="git status",
                 print_lines=[
                     f"{self._repo_name} Cherry-picking {sha} into {self.branch} failed!",
+                    *pr_line,
                     "To fix, run in the shell that will be spawned:",
                     " - look at `git status` output",
                     " - resolve merge conflicts",
@@ -836,10 +870,12 @@ class Project:
                     " - git commit",
                     " - Then exit the shell with Ctrl+D",
                 ],
+                ask=issue is None,
             )
             return stdout
 
         self.run_git("cherry-pick", sha, on_fail=on_fail)
+        return not dropped
 
     def bump_version(self, version: Version):
         self.run_command("script/bump-version.py", str(version))
