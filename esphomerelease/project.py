@@ -578,7 +578,7 @@ class Project:
                     break
                 self._ask_fix_and_retry("creating the PR", exc)
         gprint(f"Created Pull Request #{pr.number} from {self.branch} against {target_branch}")
-        click.launch(pr.html_url)
+        util.open_url(pr.html_url)
         return pr
 
     def create_release(
@@ -624,13 +624,13 @@ class Project:
 
         if draft:
             url = rel.html_url.replace("/tag/", "/edit/")
-            click.launch(url)
+            util.open_url(url)
             log = click.style(f"Please go to {url} and publish the draft.", fg="green")
             confirm(log)
         else:
             time.sleep(1.0)
             gprint(f"Created Release {tag} from {self.branch}")
-            click.launch(rel.html_url)
+            util.open_url(rel.html_url)
 
         self.pull()
 

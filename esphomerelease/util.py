@@ -2,6 +2,7 @@ import datetime
 import os
 import queue
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -25,6 +26,25 @@ def copy_clipboard(text):
         print("---------- START COPY ----------")
         print(text)
         print("---------- STOP COPY ----------")
+
+
+def open_url(url: str) -> None:
+    """Open a URL in the browser without letting it write to the terminal.
+
+    ``click.launch`` hands ``xdg-open`` the terminal's stdout/stderr, so a browser such
+    as Chrome prints its own session and zygote warnings into the release output.
+    """
+    xdg_open = shutil.which("xdg-open") if sys.platform.startswith("linux") else None
+    if xdg_open is None:
+        click.launch(url)
+        return
+    subprocess.Popen(
+        [xdg_open, url],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def open_vscode(*paths):

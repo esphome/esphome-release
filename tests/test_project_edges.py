@@ -35,7 +35,7 @@ def test_draft_release_asks_user_to_publish(
     monkeypatch.setattr(proj, "push", lambda: None)
     monkeypatch.setattr(proj, "pull", lambda: None)
     monkeypatch.setattr(project_mod.time, "sleep", lambda s: None)
-    monkeypatch.setattr(click, "launch", launched.append)
+    monkeypatch.setattr(project_mod.util, "open_url", launched.append)
     monkeypatch.setattr(project_mod, "confirm", confirmed.append)
 
     proj.create_release(Version.parse("2026.6.0"), draft=True)
@@ -139,7 +139,7 @@ def _new_project(project_mod: ModuleType, tmp_path: Any, monkeypatch: pytest.Mon
     monkeypatch.setattr(proj, "push", lambda *a, **k: None)
     monkeypatch.setattr(proj, "pull", lambda: None)
     monkeypatch.setattr(project_mod.time, "sleep", lambda s: None)
-    monkeypatch.setattr(click, "launch", lambda url: None)
+    monkeypatch.setattr(project_mod.util, "open_url", lambda url: None)
     return proj
 
 
