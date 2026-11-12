@@ -25,7 +25,7 @@ from .config import CONFIG
 from .exceptions import EsphomeReleaseError
 from .github import get_session
 from .model import Branch, BranchType, Version
-from .util import confirm, execute_command, gprint, process_asynchronously
+from .util import confirm, execute_command, gprint, process_asynchronously, require_interactive
 
 
 def _issue_pr_merged_at(issue: Issue) -> str | None:
@@ -311,6 +311,7 @@ class Project:
                 f"PR(s); open the '{milestone.title}' milestone on GitHub, find "
                 "any others (their own milestone is set) and cherry-pick them too."
             )
+        require_interactive("milestone index drift needs manual cherry-picks\n" + "\n".join(lines))
         lines += [
             "",
             " - resolve any conflicts, then git add . && git commit",
@@ -343,6 +344,7 @@ class Project:
                     f"Not merged yet: {issue.title}\nIf you want to add it please merge it manually then confirm.",
                     fg="yellow",
                 )
+                require_interactive(f"merge '{issue.title}' (#{issue.number}) or take it off the milestone")
                 while not click.confirm(log):
                     pass
                 continue
@@ -396,6 +398,7 @@ class Project:
                 "All overrides in this PR are ignored; the merge commit will be used.",
                 fg="red",
             )
+            require_interactive(f"invalid release-cherry-pick block in {what}:\n{lines}")
             confirm("Acknowledge?")
             return merge_sha
 
@@ -404,6 +407,7 @@ class Project:
                 f"{what} has a release-cherry-pick override but no target branch is known, so it is ignored.",
                 fg="yellow",
             )
+            require_interactive(f"{what} has an override but no target branch is known")
             confirm("Acknowledge?")
             return merge_sha
 
@@ -415,6 +419,7 @@ class Project:
                     "release-cherry-pick block, see NOTES.md; check the PR body before continuing.",
                     fg="yellow",
                 )
+                require_interactive(f"{what} mentions a replacement commit in prose; check the PR body")
                 confirm("Acknowledge?")
             return merge_sha
 
@@ -442,12 +447,14 @@ class Project:
         self._git_ok("fetch", "origin", commit)
         if not self._git_ok("cat-file", "-e", f"{commit}^{{commit}}"):
             gprint(f"Override commit {commit} for #{pull.number} could not be found locally or on origin.", fg="red")
+            require_interactive(f"override commit {commit} for #{pull.number} not found")
             confirm("Acknowledge?")
             return False
 
         parents = self.run_git("rev-list", "--parents", "-n", "1", commit, silent=True).decode().split()[1:]
         if len(parents) != 1:
             gprint(f"Override commit {commit} for #{pull.number} is not a single non-merge commit.", fg="red")
+            require_interactive(f"override commit {commit} for #{pull.number} is not a single non-merge commit")
             confirm("Acknowledge?")
             return False
 
@@ -474,6 +481,11 @@ class Project:
         )
         self.run_git("range-diff", f"{merge_sha}^..{merge_sha}", f"{commit}^..{commit}", show=True, silent=True)
 
+        # An override SHA comes from an editable PR body, so never auto-accept it.
+        require_interactive(
+            f"#{pull.number} ({pull.html_url}) has a release-cherry-pick override {commit} for "
+            f"{merge_sha}; review the diff above and cut interactively to accept it"
+        )
         if click.confirm(f"Cherry-pick {commit} instead of {merge_sha} for #{pull.number}?", default=False):
             return True
         gprint(f"Using the original merge commit {merge_sha} for #{pull.number}.")
@@ -557,6 +569,7 @@ class Project:
     def _ask_fix_and_retry(action: str, exc: Exception) -> None:
         """Show the error and let the user fix it on GitHub, or give up."""
         click.secho(f"GitHub rejected {action}: {exc}", fg="red")
+        require_interactive(f"GitHub rejected {action}: {exc}")
         if not click.confirm(f"Fix the problem on GitHub, then retry {action}?", default=True):
             raise EsphomeReleaseError(f"GitHub rejected {action}: {exc}") from exc
 
@@ -626,6 +639,7 @@ class Project:
             url = rel.html_url.replace("/tag/", "/edit/")
             util.open_url(url)
             log = click.style(f"Please go to {url} and publish the draft.", fg="green")
+            require_interactive(f"publish the draft release at {url}")
             confirm(log)
         else:
             time.sleep(1.0)
@@ -684,12 +698,26 @@ class Project:
         else:
             self.run_git("pull")
 
+    def _give_up_if_non_interactive(self, lines: list[str]) -> None:
+        """Non-interactive mode has no shell to fix a conflict in.
+
+        Abort the half-done merge or cherry-pick so the checkout is clean,
+        then fail with ``lines`` (which carry the PR link) as the reason.
+        """
+        if not util.is_non_interactive():
+            return
+        for operation in ("merge", "cherry-pick"):
+            if self._git_ok(operation, "--abort"):
+                break
+        require_interactive("manual conflict resolution needed\n" + "\n".join(lines))
+
     def _spawn_subshell(self, *, run: str, print_lines: list[str], ask: bool = True):
         """Spawn a shell in the repo to fix a problem by hand.
 
         ``ask=False`` skips the "spawn a shell?" confirmation, for callers that
         already asked.
         """
+        self._give_up_if_non_interactive(print_lines)
         if ask and not click.confirm("Spawn a shell to fix the problem?", default=True):
             return
         old_cwd = Path.cwd()
@@ -846,6 +874,9 @@ class Project:
             gprint("===== CHERRY PICK FAILED ====")
             for line in pr_line:
                 gprint(line)
+            self._give_up_if_non_interactive(
+                [f"{self._repo_name} Cherry-picking {sha} into {self.branch} failed!", *pr_line]
+            )
             if pull is not None and issue is not None:
                 choice = click.prompt(
                     f"Spawn a shell to fix it, or drop PR #{pull.number} from the milestone?",

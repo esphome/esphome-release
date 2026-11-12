@@ -20,6 +20,7 @@ from .exceptions import EsphomeReleaseError
 from .model import Branch, BranchType, Version
 from .project import EsphomeDocsProject, EsphomeProject, Project
 from .util import (
+    ask_prompt,
     confirm,
     feature_freeze_date,
     gprint,
@@ -27,6 +28,7 @@ from .util import (
     open_vscode,
     propagate_docs_current_branch,
     release_date,
+    require_interactive,
     update_local_copies,
 )
 
@@ -105,6 +107,7 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
         if not block:
             return
 
+        require_interactive(f"open PRs on the {milestone_title} milestone must be merged or moved first")
         if not can_ignore:
             if not click.confirm(
                 click.style("Check again?", fg="yellow"),
@@ -223,6 +226,7 @@ def _check_linked_docs_prs(version: Version):
                 f"      needs docs#{docs_pr.number}: {docs_pr.title} ({docs_pr.html_url})"
             )
 
+        require_interactive("merge the unmerged docs PRs listed above first")
         choice = click.prompt(
             click.style(
                 "[y] check again, [i] ignore (cut anyway, docs land later), [n] abort",
@@ -366,6 +370,7 @@ def _lint_docs(version: Version) -> None:
         EsphomeDocsProject.run_command("npm", "ci", live=True)
         while failed := _docs_lint_failures():
             gprint(f"Docs lint failed: {', '.join(failed)}", fg="red")
+            require_interactive(f"docs lint failed ({', '.join(failed)}); fix it on the docs branch")
             if not click.confirm(
                 f"Fix the problems in {EsphomeDocsProject.path} and re-run the docs lint?",
                 default=True,
@@ -548,7 +553,7 @@ def _default_base_version(version: Version) -> Version:
 
 
 def _prompt_base_version(version: Version) -> Version:
-    base_str = click.prompt(
+    base_str = ask_prompt(
         "Please enter base (what release to compare with for changelog)",
         default=str(_default_base_version(version)),
     )
@@ -1211,10 +1216,14 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
     prs = proj.get_pr_by_title(title=str(version), head=_bump_branch_name(version), base=head_branch)
     release_pr = None
     if not prs:
+        require_interactive(f"no release PR found for {proj.shortname} {version}")
         confirm(f"No release PRs found for {proj.shortname}, please verify it has been merged.")
     elif len(prs) == 1:
         release_pr = prs[0]
     else:
+        require_interactive(
+            f"multiple release PRs found for {proj.shortname} {version}: " + ", ".join(pr.html_url for pr in prs)
+        )
         gprint("Found multiple release PRs. Please select the matchin one")
         for i, pr in enumerate(prs, start=1):
             gprint(f" [{i}] #{pr.number} by @{pr.user.login} ({pr.html_url})")
@@ -1233,6 +1242,7 @@ def _merge_release_pr(*, proj: Project, version: Version, head_branch: BranchTyp
     if release_pr is not None and release_pr.state == "open":
         success = release_pr.merge(merge_method="merge")
         if not success:
+            require_interactive(f"merging the {proj.shortname} release PR failed: {release_pr.html_url}")
             confirm("Merging failed, please check and confirm when ready")
 
 

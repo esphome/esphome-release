@@ -10,6 +10,7 @@ elsewhere in this repo.
 import importlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,16 @@ import ImgTable from "@components/ImgTable.astro";
 For the complete list of every merged pull request in this release, see the
 [full {VERSION} changelog](/changelog/{VERSION}/).
 """
+
+
+@pytest.fixture(autouse=True)
+def _reset_non_interactive():
+    """The mode is process-wide state, so no test may leak it into the next."""
+    yield
+    # Only touch util if the test imported it: importing reads config.json from the cwd.
+    util = sys.modules.get("esphomerelease.util")
+    if util is not None:
+        util.set_non_interactive(False)
 
 
 @pytest.fixture

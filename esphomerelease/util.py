@@ -16,6 +16,33 @@ from .config import CONFIG
 from .exceptions import EsphomeReleaseError
 from .model import Branch, Version
 
+# Set by the ``--non-interactive`` CLI flag: no prompts, so every site that
+# would ask either proceeds with a logged assumption or raises.
+_NON_INTERACTIVE = False
+
+
+def set_non_interactive(value: bool) -> None:
+    global _NON_INTERACTIVE  # noqa: PLW0603 - process-wide CLI mode
+    _NON_INTERACTIVE = value
+
+
+def is_non_interactive() -> bool:
+    return _NON_INTERACTIVE
+
+
+def require_interactive(message: str) -> None:
+    """Raise when running non-interactively, because ``message`` needs a human."""
+    if _NON_INTERACTIVE:
+        raise EsphomeReleaseError(f"Non-interactive mode cannot continue: {message}")
+
+
+def ask_prompt(text: str, *, default: str) -> str:
+    """``click.prompt`` that takes ``default`` (and says so) when non-interactive."""
+    if _NON_INTERACTIVE:
+        gprint(f"Non-interactive: {text}: using {default}")
+        return default
+    return click.prompt(text, default=default)
+
 
 def copy_clipboard(text):
     """Copy some text to clipboard.
@@ -34,6 +61,8 @@ def open_url(url: str) -> None:
     ``click.launch`` hands ``xdg-open`` the terminal's stdout/stderr, so a browser such
     as Chrome prints its own session and zygote warnings into the release output.
     """
+    if _NON_INTERACTIVE:
+        return
     xdg_open = shutil.which("xdg-open") if sys.platform.startswith("linux") else None
     if xdg_open is None:
         click.launch(url)
@@ -48,6 +77,8 @@ def open_url(url: str) -> None:
 
 
 def open_vscode(*paths):
+    if _NON_INTERACTIVE:
+        return
     subprocess.run([CONFIG.get("editor", "code"), *paths], check=False)
 
 
@@ -153,6 +184,7 @@ def _discard_local_changes():
     for project in (EsphomeProject, EsphomeDocsProject):
         if not project.has_local_changes:
             continue
+        require_interactive(f"local changes in the {project.shortname} repository at {project.path}")
         if not click.confirm(
             click.style(
                 f"Local changes in {project.shortname} repository! "
@@ -250,6 +282,13 @@ def milestone_due_on(date: datetime.date) -> str:
 
 
 def confirm(text):
+    """Ask until the user says yes; non-interactive, assume yes (logged).
+
+    Sites where assuming yes is unsafe call :func:`require_interactive` first.
+    """
+    if _NON_INTERACTIVE:
+        gprint(f"Non-interactive: assuming yes for: {click.unstyle(text)}")
+        return
     while not click.confirm(text):
         pass
 
@@ -317,6 +356,7 @@ def execute_command(*args: str, **kwargs: Any) -> bytes:
             if on_fail is not None:
                 return on_fail(process.stdout)
             print(f"Failed running command {full_cmd}")
+            require_interactive(f"command failed: {full_cmd}")
             print("Please try running it again")
             if click.confirm(click.style("If it passes, you press y", fg="red")):
                 return process.stdout

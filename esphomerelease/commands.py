@@ -19,7 +19,9 @@ from .util import (
     copy_clipboard,
     execute_command,
     gprint,
+    is_non_interactive,
     process_asynchronously,
+    set_non_interactive,
 )
 
 USERS_CACHE_FILE = "users_cache.json"
@@ -56,8 +58,23 @@ def _commit_user_cache_if_changed():
 
 @click.group()
 @click.option("--step/--no-step", default=False, help="Prompt before each command is executed.")
-def cli(step):
+@click.option(
+    "--non-interactive/--interactive",
+    default=False,
+    envvar="ESPR_NON_INTERACTIVE",
+    help="Never prompt, for CI: only patch releases can be cut and published; anything needing a human fails.",
+)
+def cli(step, non_interactive):
+    if step and non_interactive:
+        raise click.UsageError("--step cannot be combined with --non-interactive.")
     CONFIG["step"] = step
+    set_non_interactive(non_interactive)
+
+
+def _require_patch_release(version: Version) -> None:
+    """Non-interactive mode only supports patch releases for now."""
+    if is_non_interactive() and not (version.patch > 0 and not version.beta and not version.dev):
+        raise click.ClickException(f"--non-interactive only supports patch releases, not {version}.")
 
 
 STABLE_SHORTHANDS = ("s", "stable")
@@ -113,14 +130,22 @@ def _resolve_version(value: str) -> Version:
 @click.argument("version")
 @click.option(
     "--watch/--no-watch",
-    default=True,
+    default=None,
     help="After cutting, watch CI on the release PRs, send desktop notifications and offer to publish once it passes.",
 )
 def cut(version, watch):
+    if watch is None:
+        watch = not is_non_interactive()
+    elif watch and is_non_interactive():
+        raise click.ClickException("--watch cannot be combined with --non-interactive.")
     version = _resolve_version(version)
+    _require_patch_release(version)
     base = cutting.cut_beta_release(version) if version.beta else cutting.cut_release(version)
 
-    _commit_user_cache_if_changed()
+    if is_non_interactive():
+        gprint("Non-interactive: not committing the user cache")
+    else:
+        _commit_user_cache_if_changed()
 
     if watch:
         ci_watch.watch_release_ci(version, base=base)
@@ -158,6 +183,7 @@ def publish(version: str | None, code: bool, docs: bool):
         projects.append(EsphomeDocsProject)
 
     resolved = _resolve_version(version) if version else _pending_release_version()
+    _require_patch_release(resolved)
     if resolved.beta:
         cutting.publish_beta_release(resolved, projects=projects)
     else:

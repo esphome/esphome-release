@@ -123,6 +123,10 @@ class RetryingGitHubSession(github3.session.GitHubSession):
 
     @staticmethod
     def _ask_retry(method: str, url: str, problem: str, idempotent: bool) -> bool:
+        from .util import is_non_interactive  # noqa: PLC0415 - util reads config.json at import
+
+        if is_non_interactive():
+            raise EsphomeReleaseError(f"GitHub request {method} {url} failed: {problem}")
         with _PROMPT_LOCK:
             click.secho(f"GitHub request failed: {method} {url}: {problem}", fg="red")
             if not idempotent:
