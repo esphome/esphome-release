@@ -193,6 +193,13 @@ class Project:
                 milestone.update(due_on=due_on)
         return milestone
 
+    def add_prs_to_milestone(self, numbers: list[int], title: str) -> Milestone:
+        """Put the PRs/issues ``numbers`` on the milestone ``title``, creating it if missing."""
+        target = self.ensure_milestone(title)
+        for number in numbers:
+            self.repo.issue(number).edit(milestone=target.number)
+        return target
+
     def get_open_prs_for_milestone(self, milestone: Milestone) -> list[PullRequest]:
         """Get all open PRs assigned to a milestone."""
         if milestone is None:

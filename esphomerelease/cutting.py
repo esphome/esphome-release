@@ -136,12 +136,39 @@ def _check_open_milestone_prs(version: Version, *, block: bool):
 DocsPRPair = tuple[PullRequest, PullRequest]
 
 
-def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPRPair]]:
+class DocsPRFindings(NamedTuple):
+    """Result of :func:`_find_docs_pr_pairs`, each a list of ``(code_pr, docs_pr)``."""
+
+    unmerged: list[DocsPRPair]
+    unconfirmed: list[DocsPRPair]
+    unmilestoned: list[DocsPRPair]
+
+
+def _docs_branches_in_cut(version: Version) -> set[str]:
+    """Names of the docs branches whose merged PRs a cut of ``version`` includes.
+
+    The stable branch always counts (``propagate_docs_current_branch`` merges it
+    into the others before every cut). Betas and the x.y.0 final also take the
+    beta branch, and beta 1 additionally merges the dev branch.
+    """
+    branches = {EsphomeDocsProject.lookup_branch(Branch.STABLE)}
+    if version.beta or version.patch == 0:
+        branches.add(EsphomeDocsProject.lookup_branch(Branch.BETA))
+    if version.beta == 1:
+        branches.add(EsphomeDocsProject.lookup_branch(Branch.DEV))
+    return branches
+
+
+def _find_docs_pr_pairs(version: Version) -> DocsPRFindings:
     """Pair the code PRs going into this cut with the docs PRs they link to.
 
-    Returns ``(unmerged, unconfirmed)`` as ``(code_pr, docs_pr)`` tuples:
-    confirmed pairs whose docs PR has not merged yet, and one-way references
-    where the docs PR does not link back (informational only).
+    Returns :class:`DocsPRFindings` of ``(code_pr, docs_pr)`` tuples:
+    confirmed pairs whose docs PR has not merged yet (``unmerged``), one-way
+    references where the docs PR does not link back (``unconfirmed``,
+    informational only), and confirmed pairs whose docs PR is merged but is
+    neither on the cycle milestone, labelled ``cherry-picked`` nor based on a
+    branch the cut already includes (``unmilestoned``), so the cut would leave
+    the documentation behind.
 
     :func:`_check_open_milestone_prs` only sees PRs that carry the milestone,
     and docs PRs frequently have none at all, so nothing else in the cut notices
@@ -149,7 +176,7 @@ def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPR
     """
     milestone = EsphomeProject.get_milestone_by_title(_cycle_milestone_title(version))
     if milestone is None:
-        return [], []
+        return DocsPRFindings([], [], [])
 
     # Every pass re-fetches: the user is expected to merge docs PRs while the
     # "Check again?" loop runs, so cached PR payloads would report stale state.
@@ -161,13 +188,15 @@ def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPR
         references.extend((code_pr, docs_number) for docs_number in extract_docs_pr_numbers(code_pr.body))
 
     if not references:
-        return [], []
+        return DocsPRFindings([], [], [])
 
     docs_numbers = sorted({number for _, number in references})
     docs_prs = dict(zip(docs_numbers, EsphomeDocsProject.get_prs(docs_numbers), strict=True))
 
     unmerged: list[DocsPRPair] = []
     unconfirmed: list[DocsPRPair] = []
+    unmilestoned: list[DocsPRPair] = []
+    cut_branches = _docs_branches_in_cut(version)
     for code_pr, docs_number in references:
         docs_pr = docs_prs[docs_number]
         if not is_confirmed_pair(
@@ -179,7 +208,18 @@ def _find_docs_pr_pairs(version: Version) -> tuple[list[DocsPRPair], list[DocsPR
             unconfirmed.append((code_pr, docs_pr))
         elif docs_pr.merged_at is None:
             unmerged.append((code_pr, docs_pr))
-    return unmerged, unconfirmed
+        elif not _docs_pr_in_cut(docs_pr, milestone.title, cut_branches):
+            unmilestoned.append((code_pr, docs_pr))
+    return DocsPRFindings(unmerged, unconfirmed, unmilestoned)
+
+
+def _docs_pr_in_cut(docs_pr: PullRequest, milestone_title: str, cut_branches: set[str]) -> bool:
+    """Whether a merged docs PR will be part of the cut without further action."""
+    if any(label["name"] == "cherry-picked" for label in docs_pr.labels):
+        return True
+    if docs_pr.milestone is not None and docs_pr.milestone["title"] == milestone_title:
+        return True
+    return docs_pr.base.ref in cut_branches
 
 
 def _check_linked_docs_prs(version: Version):
@@ -191,9 +231,14 @@ def _check_linked_docs_prs(version: Version):
     land later: unlike the open-PR gate there is nothing to move (the code PR
     is already merged and docs PRs rarely carry a milestone), so it just
     reports what ships undocumented and lets the cut through.
+
+    Once the unmerged check is settled (nothing unmerged, or "ignore"), merged
+    docs PRs that the cut would not pick up are offered for the docs milestone
+    by :func:`_offer_docs_milestone`. "Abort" at either prompt raises.
     """
     while True:
-        unmerged, unconfirmed = _find_docs_pr_pairs(version)
+        findings = _find_docs_pr_pairs(version)
+        unmerged, unconfirmed = findings.unmerged, findings.unconfirmed
 
         if unconfirmed:
             gprint(
@@ -208,7 +253,7 @@ def _check_linked_docs_prs(version: Version):
                 )
 
         if not unmerged:
-            return
+            break
 
         # Several code PRs can share one docs PR, so count the docs PRs and the
         # code PRs separately rather than the pairs.
@@ -246,7 +291,49 @@ def _check_linked_docs_prs(version: Version):
                 f"Ignoring {docs_count} unmerged docs PR(s); shipping {numbers} undocumented",
                 fg="yellow",
             )
-            return
+            break
+
+    _offer_docs_milestone(version, findings.unmilestoned)
+
+
+def _offer_docs_milestone(version: Version, unmilestoned: list[DocsPRPair]) -> None:
+    """Offer to put merged docs PRs the cut would miss on the docs cycle milestone."""
+    if not unmilestoned:
+        return
+
+    title = _cycle_milestone_title(version)
+    docs_count = len({docs_pr.number for _, docs_pr in unmilestoned})
+    gprint(
+        f"Warning: Found {docs_count} merged docs PR(s) not on the {title} milestone; the cut will not include them:",
+        fg="yellow",
+    )
+    for code_pr, docs_pr in unmilestoned:
+        current = docs_pr.milestone["title"] if docs_pr.milestone is not None else "none"
+        gprint(
+            f"  - esphome#{code_pr.number} {code_pr.title}\n"
+            f"      docs#{docs_pr.number}: {docs_pr.title} ({docs_pr.html_url}) "
+            f"[base: {docs_pr.base.ref}, milestone: {current}]"
+        )
+
+    require_interactive(f"merged docs PRs listed above are not on the {title} docs milestone")
+    choice = click.prompt(
+        click.style(
+            f"[a] add them to the {title} milestone, [i] ignore (cut without them), [n] abort",
+            fg="yellow",
+        ),
+        type=click.Choice(["a", "i", "n"]),
+        default="a",
+        show_default=True,
+    )
+    if choice == "n":
+        raise EsphomeReleaseError("Aborted: merged docs PRs missing from the milestone")
+    if choice == "i":
+        gprint(f"Ignoring {docs_count} merged docs PR(s); the cut leaves them out", fg="yellow")
+        return
+
+    numbers = list(dict.fromkeys(docs_pr.number for _, docs_pr in unmilestoned))
+    EsphomeDocsProject.add_prs_to_milestone(numbers, title)
+    gprint(f"Added docs PR(s) {', '.join(f'#{n}' for n in numbers)} to the {title} milestone", fg="yellow")
 
 
 def _strategy_merge(project: Project, version: Version, *, base: Branch, head: Branch):

@@ -104,12 +104,29 @@ class FakePull:
         title: str = "title",
         merged_at: datetime | None = None,
         repo: str = "esphome",
+        base_ref: str = "current",
+        milestone: str | None = None,
+        labels: list[str] | None = None,
     ):
         self.number = number
+        self.base = types.SimpleNamespace(ref=base_ref)
+        self.milestone = {"title": milestone, "number": 1} if milestone is not None else None
+        self.labels = [{"name": name} for name in labels or []]
         self.title = title
         self.body = body
         self.merged_at = merged_at
         self.html_url = f"https://github.com/esphome/{repo}/pull/{number}"
+
+
+class FakeIssueEditor:
+    """Stands in for ``repo.issue(n)``, recording ``edit`` calls."""
+
+    def __init__(self, number: int, edits: list[tuple[int, int]]):
+        self.number = number
+        self._edits = edits
+
+    def edit(self, *, milestone: int) -> None:
+        self._edits.append((self.number, milestone))
 
 
 class FakeRepo:
@@ -125,6 +142,17 @@ class FakeRepo:
         self._pulls = pulls or {}
         self.pull_request_calls: list[int] = []
         self.issues_calls: list[tuple] = []
+        self.edits: list[tuple[int, int]] = []
+        self.created_milestones: list[str] = []
+
+    def issue(self, number: int) -> FakeIssueEditor:
+        return FakeIssueEditor(number, self.edits)
+
+    def create_milestone(self, title: str, **kwargs: Any) -> types.SimpleNamespace:
+        self.created_milestones.append(title)
+        milestone = types.SimpleNamespace(title=title, number=77)
+        self._milestones.append(milestone)
+        return milestone
 
     def milestones(self, state: str) -> list:
         assert state == "open"
@@ -586,3 +614,211 @@ def test_cut_checks_docs_prs_before_touching_local_copies(modules, monkeypatch, 
     getattr(cutting, cut)(version)
 
     assert order == [("check", version), ("update", None)]
+
+
+# --- merged docs PRs that the cut would not include -------------------------
+
+
+@pytest.mark.parametrize(
+    ("version_str", "expected"),
+    [
+        ("2026.7.0b1", {"current", "beta", "next"}),
+        ("2026.7.0b2", {"current", "beta"}),
+        ("2026.7.0", {"current", "beta"}),
+        ("2026.7.1", {"current"}),
+    ],
+)
+def test_docs_branches_in_cut(modules, version_str: str, expected: set[str]) -> None:
+    assert modules._docs_branches_in_cut(Version.parse(version_str)) == expected
+
+
+def _merged_pair(
+    cutting,
+    *,
+    docs_kwargs: dict[str, Any] | None = None,
+    extra_code: list[int] | None = None,
+    docs_milestones: list | None = None,
+) -> tuple[FakeRepo, FakeRepo]:
+    """Wire code PR(s) paired with merged docs PR 7071 (plus extra code PRs sharing it)."""
+    code_numbers = [17797, *(extra_code or [])]
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(n) for n in code_numbers],
+        pulls={
+            n: FakePull(n, title=f"code {n}", merged_at=datetime(2026, 7, 1), body=_back_link(7071))
+            for n in code_numbers
+        },
+    )
+    kwargs: dict[str, Any] = {"base_ref": "next", **(docs_kwargs or {})}
+    docs_pull = FakePull(
+        7071,
+        title="docs title",
+        body="".join(_docs_body(n) for n in code_numbers),
+        merged_at=datetime(2026, 7, 2),
+        repo="esphome.io",
+        **kwargs,
+    )
+    docs_repo = FakeRepo(pulls={7071: docs_pull}, milestones=docs_milestones)
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    return code_repo, docs_repo
+
+
+@pytest.mark.parametrize(
+    "docs_kwargs",
+    [
+        {"labels": ["cherry-picked"]},
+        {"milestone": "2026.7.0"},
+        {"base_ref": "current"},
+        {"base_ref": "beta"},
+    ],
+)
+def test_merged_docs_pr_already_in_cut_is_not_flagged(modules, monkeypatch, capsys, docs_kwargs):
+    cutting = modules
+    _merged_pair(cutting, docs_kwargs=docs_kwargs)
+    _no_confirm(monkeypatch)
+
+    findings = cutting._find_docs_pr_pairs(VERSION)
+
+    assert findings.unmilestoned == []
+    cutting._check_linked_docs_prs(VERSION)
+    assert "not on the" not in capsys.readouterr().out
+
+
+def test_dev_base_is_included_only_for_beta_one(modules, monkeypatch):
+    cutting = modules
+    _merged_pair(cutting)
+    assert len(cutting._find_docs_pr_pairs(Version.parse("2026.7.0b1")).unmilestoned) == 0
+    assert len(cutting._find_docs_pr_pairs(VERSION).unmilestoned) == 1
+
+
+def test_unmilestoned_pair_found_and_listed(modules, monkeypatch, capsys):
+    cutting = modules
+    _merged_pair(cutting, docs_kwargs={"milestone": "2026.6.0"})
+    prompt, calls = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    out = capsys.readouterr().out
+    assert "Warning: Found 1 merged docs PR(s) not on the 2026.7.0 milestone; the cut will not include them:" in out
+    assert "  - esphome#17797 code 17797\n" in out
+    assert (
+        "      docs#7071: docs title (https://github.com/esphome/esphome.io/pull/7071) "
+        "[base: next, milestone: 2026.6.0]"
+    ) in out
+    assert "Ignoring 1 merged docs PR(s); the cut leaves them out" in out
+    assert len(calls) == 1
+
+
+def test_unmilestoned_prompt_shape_and_none_milestone(modules, monkeypatch, capsys):
+    cutting = modules
+    _, docs_repo = _merged_pair(cutting)
+    prompt, calls = _make_prompt("i")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    text, kwargs = calls[0]
+    assert "[a] add them to the 2026.7.0 milestone" in text
+    assert "[i] ignore" in text
+    assert "[n] abort" in text
+    assert isinstance(kwargs["type"], click.Choice)
+    assert list(kwargs["type"].choices) == ["a", "i", "n"]
+    assert kwargs["default"] == "a"
+    assert kwargs["show_default"] is True
+    assert "milestone: none]" in capsys.readouterr().out
+    assert docs_repo.edits == []
+
+
+def test_unmilestoned_abort(modules, monkeypatch, capsys):
+    cutting = modules
+    _, docs_repo = _merged_pair(cutting)
+    prompt, _ = _make_prompt("n")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    with pytest.raises(EsphomeReleaseError, match="missing from the milestone"):
+        cutting._check_linked_docs_prs(VERSION)
+
+    assert docs_repo.edits == []
+
+
+def test_unmilestoned_add_uses_existing_milestone_and_dedupes(modules, monkeypatch, capsys):
+    cutting = modules
+    docs_milestone = types.SimpleNamespace(title="2026.7.0", number=42)
+    _, docs_repo = _merged_pair(cutting, extra_code=[17798], docs_milestones=[docs_milestone])
+    prompt, calls = _make_prompt("a")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    assert len(calls) == 1
+    assert docs_repo.edits == [(7071, 42)]
+    assert docs_repo.created_milestones == []
+    out = capsys.readouterr().out
+    assert "Found 1 merged docs PR(s)" in out
+    assert "Added docs PR(s) #7071 to the 2026.7.0 milestone" in out
+
+
+def test_add_prs_to_milestone_creates_missing_milestone(modules):
+    cutting = modules
+    docs_repo = FakeRepo()
+    cutting.EsphomeDocsProject._repo = docs_repo
+
+    target = cutting.EsphomeDocsProject.add_prs_to_milestone([5, 6], "2026.7.0")
+
+    assert docs_repo.created_milestones == ["2026.7.0"]
+    assert target.number == 77
+    assert docs_repo.edits == [(5, 77), (6, 77)]
+
+
+def test_unmerged_then_ignore_still_offers_milestone(modules, monkeypatch, capsys):
+    cutting = modules
+    code_repo = FakeRepo(
+        milestones=[MILESTONE],
+        closed_issues=[FakeIssue(1), FakeIssue(2)],
+        pulls={
+            1: FakePull(1, merged_at=datetime(2026, 7, 1), body=_back_link(10)),
+            2: FakePull(2, merged_at=datetime(2026, 7, 1), body=_back_link(11)),
+        },
+    )
+    docs_repo = FakeRepo(
+        milestones=[types.SimpleNamespace(title="2026.7.0", number=42)],
+        pulls={
+            10: FakePull(10, body=_docs_body(1), repo="esphome.io"),
+            11: FakePull(11, body=_docs_body(2), merged_at=datetime(2026, 7, 2), repo="esphome.io", base_ref="next"),
+        },
+    )
+    _wire(cutting, code_repo=code_repo, docs_repo=docs_repo)
+    prompt, calls = _make_prompt("i", "a")
+    monkeypatch.setattr(click, "prompt", prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    assert len(calls) == 2
+    assert "[y] check again" in calls[0][0]
+    assert "[a] add them" in calls[1][0]
+    assert docs_repo.edits == [(11, 42)]
+
+
+def test_recheck_after_merge_then_offers_milestone(modules, monkeypatch, capsys):
+    cutting = modules
+    _, docs_repo = _unmerged_single(cutting)
+    docs_pull = docs_repo._pulls[7071]
+    docs_pull.base = types.SimpleNamespace(ref="next")
+    docs_repo._milestones.append(types.SimpleNamespace(title="2026.7.0", number=42))
+
+    def merge_docs_pr() -> None:
+        docs_pull.merged_at = datetime(2026, 7, 3)
+
+    answers = iter(["y", "a"])
+
+    def on_prompt(text: str, **kwargs: Any) -> str:
+        if "[y] check again" in text:
+            merge_docs_pr()
+        return next(answers)
+
+    monkeypatch.setattr(click, "prompt", on_prompt)
+
+    cutting._check_linked_docs_prs(VERSION)
+
+    assert docs_repo.edits == [(7071, 42)]

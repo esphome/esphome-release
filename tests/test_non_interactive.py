@@ -174,8 +174,23 @@ def test_unmerged_docs_prs_raise(ni: SimpleNamespace, monkeypatch: pytest.Monkey
     _no_tty(monkeypatch)
     code_pr = SimpleNamespace(number=1, title="code")
     docs_pr = SimpleNamespace(number=2, title="docs", html_url="https://example.com/2")
-    monkeypatch.setattr(ni.cutting, "_find_docs_pr_pairs", lambda version: ([(code_pr, docs_pr)], []))
+    monkeypatch.setattr(
+        ni.cutting, "_find_docs_pr_pairs", lambda version: ni.cutting.DocsPRFindings([(code_pr, docs_pr)], [], [])
+    )
     with pytest.raises(EsphomeReleaseError, match=r"merge the unmerged docs PRs"):
+        ni.cutting._check_linked_docs_prs(PATCH)
+
+
+def test_unmilestoned_docs_prs_raise(ni: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_tty(monkeypatch)
+    code_pr = SimpleNamespace(number=1, title="code")
+    docs_pr = SimpleNamespace(
+        number=2, title="docs", html_url="https://example.com/2", milestone=None, base=SimpleNamespace(ref="next")
+    )
+    monkeypatch.setattr(
+        ni.cutting, "_find_docs_pr_pairs", lambda version: ni.cutting.DocsPRFindings([], [], [(code_pr, docs_pr)])
+    )
+    with pytest.raises(EsphomeReleaseError, match=r"not on the 2026.6.1 docs milestone"):
         ni.cutting._check_linked_docs_prs(PATCH)
 
 
