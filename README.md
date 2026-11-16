@@ -8,7 +8,7 @@ To install use the command `uv sync`, then run the tool with `uv run esphomerele
 
 The scripts use a configuration file with the local paths to the various repos in the `config.json` file.
 
-Run `cp config.{sample.,}json` and edit `config.json`.
+Run `cp config.{sample.,}json` and edit `config.json`. It is read from the current directory; if `espr` is run from another directory it switches to its own install folder automatically when that holds a `config.json`. If that cannot be found it lists nearby folders (parent, sibling or child) holding a `config.json` and exits.
 
 ## GitHub authentication
 
