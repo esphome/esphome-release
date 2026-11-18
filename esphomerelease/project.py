@@ -70,7 +70,11 @@ class Project:
         stable_branch: str | None = None,
         beta_branch: str | None = None,
         dev_branch: str | None = None,
+        back_merge_paths: tuple[str, ...] = (),
     ):
+        # Repo-relative files or directories whose release-branch version the dev back-merge carries
+        self.back_merge_paths: tuple[str, ...] = back_merge_paths
+
         # The name on the remote
         self._repo_name: str | None = repo_name
         self.shortname: str = shortname
@@ -741,12 +745,17 @@ class Project:
             os.chdir(old_cwd)
         confirm("Confirm the problem has been fixed")
 
-    def merge(self, branch: BranchType, strategy_option: str | None = None):
-        """Merge the branch `branch` into the current branch with an optional explicit strategy."""
+    def merge(self, branch: BranchType, strategy_option: str | None = None, *, ff_only: bool = False):
+        """Merge the branch `branch` into the current branch with an optional explicit strategy.
+
+        With `ff_only`, pass `--ff-only` so a divergence fails instead of creating a merge commit.
+        """
         branch = self.lookup_branch(branch)
         command = ["merge"]
         if strategy_option is not None:
             command += ["-X", strategy_option]
+        if ff_only:
+            command.append("--ff-only")
         command.append(branch)
 
         def on_fail(stdout):
@@ -766,6 +775,48 @@ class Project:
             return stdout
 
         self.run_git(*command, on_fail=on_fail)
+
+    def _is_back_merge_path(self, path: str) -> bool:
+        """Whether `path` is one of, or under one of, the `back_merge_paths`."""
+        return any(path == p or path.startswith(p.rstrip("/") + "/") for p in self.back_merge_paths)
+
+    def merge_keeping_tree(self, branch: BranchType) -> None:
+        """Merge `branch` into the current branch as history only, keeping the current tree.
+
+        ``-s ours`` rather than ``-X ours``: the latter only settles conflicting hunks, so a
+        pick made from an alternate release-cherry-pick commit leaks its non-conflicting
+        hunks into the current branch. Whatever a normal merge would have changed is listed
+        first so the release manager knows what is being dropped. The exception is
+        ``back_merge_paths``: release-generated content that is taken from `branch` wholesale.
+        """
+        branch = self.lookup_branch(branch)
+        # merge-tree exits 1 on unresolvable conflicts but still prints the tree OID first.
+        out = self.run_git(
+            "merge-tree", "--write-tree", "-X", "ours", "HEAD", branch, silent=True, on_fail=lambda stdout: stdout
+        )
+        tree = out.decode().splitlines()[0]
+        changed = self.run_git("diff", "--name-only", "HEAD", tree, silent=True).decode().splitlines()
+        carried = [p for p in changed if self._is_back_merge_path(p)]
+        dropped = [p for p in changed if not self._is_back_merge_path(p)]
+        if dropped:
+            stat = self.run_git("diff", "--stat", "HEAD", tree, "--", *dropped, silent=True).decode().strip()
+            gprint(
+                f"Merging {branch} into {self.branch} would change these files:\n{stat}\n"
+                f"They are not being merged: {self.branch} keeps its current code. This is typically "
+                "caused by a pick made from an alternate release-cherry-pick commit. Anything "
+                "genuinely needed must be ported with a PR.",
+                fg="yellow",
+            )
+            util.confirm(f"Keep {self.branch} as is and drop these changes?")
+        if not carried:
+            self.run_git("merge", "-s", "ours", "--no-edit", branch)
+            return
+        gprint(f"Taking these files from {branch}:\n" + "\n".join(carried))
+        self.run_git("merge", "-s", "ours", "--no-commit", branch)
+        self.run_git("restore", f"--source={branch}", "--staged", "--worktree", "--", *carried)
+        # git merge never runs pre-commit hooks, and the docs repo's hook rejects direct commits
+        # to the dev branch, so the concluding commit must skip them too.
+        self.run_git("commit", "--no-edit", "--no-verify")
 
     # pylint: disable=redefined-outer-name
     def commit(
@@ -953,6 +1004,11 @@ EsphomeDocsProject = Project(
     stable_branch="current",
     beta_branch="beta",
     dev_branch="next",
+    back_merge_paths=(
+        "src/content/docs/changelog",
+        "src/content/docs/guides/supporters.mdx",
+        "src/content/docs/blog",
+    ),
 )
 EsphomeHassioProject = Project(repo_name="hassio", path=CONFIG["esphome_hassio_path"], shortname="hassio")
 EsphomeIssuesProject = Project(repo_name="issues", path=CONFIG["esphome_issues_path"], shortname="issues")

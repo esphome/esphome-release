@@ -97,6 +97,14 @@ Anyone who can edit a PR body can write such a block, and GitHub serves fork-net
 repository, so the SHA is untrusted and is never used without that manual confirmation. `esphomerelease
 milestone-cherry-pick --target <branch>` applies overrides for the given branch.
 
+After a beta or full release is published, the release branch is merged back into `dev` as history only: `dev`'s tree is left
+unchanged (`git merge -s ours`), because a pick made from an alternate commit differs from `dev`'s code and a plain
+`-X ours` merge would still pull its non-conflicting hunks in. The cutter lists any files from the release branch that
+this leaves out and asks for an acknowledgement, so anything genuinely needed must be ported to `dev` with a PR.
+For the docs repo, the changelog pages, blog posts and supporters page are the exception: they are generated on the release
+branch and taken from it wholesale, while everything else (e.g. `data/version.json`) is left as `next` has it.
+The release branch is merged into `beta` as a fast-forward only, and the publish stops if it cannot fast-forward.
+
 ## PR Merging and Releasing
 
 The PR on GitHub can be used to let the CI check if everything's ok. When ready, merge the PR (DO NOT SQUASH, branch protection rules should already disallow this).

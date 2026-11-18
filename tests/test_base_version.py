@@ -140,8 +140,11 @@ class FakePublishProject:
     def pull(self):
         self.calls.append(("pull",))
 
-    def merge(self, branch, strategy):
-        self.calls.append(("merge", branch, strategy))
+    def merge(self, branch, *, ff_only):
+        self.calls.append(("merge", branch, ff_only))
+
+    def merge_keeping_tree(self, branch):
+        self.calls.append(("merge_keeping_tree", branch))
 
     def push(self):
         self.calls.append(("push",))
@@ -167,7 +170,7 @@ def test_publish_beta_release_derives_base_without_api(modules, monkeypatch):
     assert proj.calls == [
         ("workon", Branch.DEV),
         ("pull",),
-        ("merge", Branch.BETA, "ours"),
+        ("merge_keeping_tree", Branch.BETA),
         ("push",),
     ]
 
@@ -193,11 +196,11 @@ def test_publish_release_derives_base_without_api(modules, monkeypatch):
     assert proj.calls == [
         ("workon", Branch.BETA),
         ("pull",),
-        ("merge", Branch.STABLE, "ours"),
+        ("merge", Branch.STABLE, True),
         ("push",),
         ("workon", Branch.DEV),
         ("pull",),
-        ("merge", Branch.STABLE, "ours"),
+        ("merge_keeping_tree", Branch.STABLE),
         ("push",),
     ]
 

@@ -538,7 +538,8 @@ def test_publish_patch_end_to_end(modules: SimpleNamespace, monkeypatch: pytest.
 
     def fake_execute(*args: str, **kwargs: Any) -> bytes:
         git.append(args)
-        return b""
+        # merge-tree prints the resulting tree OID first
+        return b"0" * 40 + b"\n" if "merge-tree" in args else b""
 
     monkeypatch.setattr(project_mod, "execute_command", fake_execute)
     monkeypatch.setattr(project_mod.time, "sleep", lambda s: None)
@@ -570,7 +571,8 @@ def test_publish_patch_end_to_end(modules: SimpleNamespace, monkeypatch: pytest.
     assert result.exit_code == 0, result.output
     assert merged == ["esphome", "docs"]
     assert created == [("esphome", "2026.6.1", False), ("docs", "2026.6.1", False)]
-    assert ("git", "merge", "-X", "ours", "release") in git or any("merge" in c for c in git)
+    assert ("git", "merge", "--ff-only", "release") in git
+    assert ("git", "merge", "-s", "ours", "--no-edit", "release") in git
     assert "Non-interactive: assuming yes for: Publish version 2026.6.1?" in result.output
     assert "Non-interactive: Please enter base" in result.output
     assert isinstance(modules.project, ModuleType)

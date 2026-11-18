@@ -1396,7 +1396,7 @@ def publish_beta_release(
     for proj in projects:
         with proj.workon(Branch.DEV):
             proj.pull()
-            proj.merge(Branch.BETA, "ours")
+            proj.merge_keeping_tree(Branch.BETA)
             proj.push()
 
 
@@ -1423,11 +1423,11 @@ def publish_release(
     for proj in projects:
         with proj.workon(Branch.BETA):
             proj.pull()
-            proj.merge(Branch.STABLE, "ours")
+            proj.merge(Branch.STABLE, ff_only=True)
             proj.push()
         with proj.workon(Branch.DEV):
             proj.pull()
-            proj.merge(Branch.STABLE, "ours")
+            proj.merge_keeping_tree(Branch.STABLE)
             proj.push()
 
 
