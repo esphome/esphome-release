@@ -3,6 +3,7 @@ import glob
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from github3.issues.label import Label
@@ -56,7 +57,19 @@ def _commit_user_cache_if_changed():
     execute_command("git", "push", cwd=str(repo_root))
 
 
-@click.group()
+class _ReleaseGroup(click.Group):
+    """Group that reports Ctrl-C / EOF at a prompt on its own line, not glued to the prompt."""
+
+    def invoke(self, ctx: click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except (click.Abort, KeyboardInterrupt):
+            click.echo(err=True)
+            click.secho("Aborted.", fg="red", err=True)
+            ctx.exit(1)
+
+
+@click.group(cls=_ReleaseGroup)
 @click.option("--step/--no-step", default=False, help="Prompt before each command is executed.")
 @click.option(
     "--non-interactive/--interactive",
