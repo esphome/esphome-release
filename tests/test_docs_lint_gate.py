@@ -7,6 +7,7 @@ aborts the cut before anything is pushed.
 The ``cutting`` fixture lives in ``conftest.py``.
 """
 
+import sys
 from typing import Any
 
 import pytest
@@ -35,7 +36,7 @@ def docs(cutting, monkeypatch):
         calls["run"].append(args)
         if args in calls["fail"]:
             calls["fail"].discard(args)
-            raise EsphomeReleaseError("Failed running command!")
+            return kwargs["on_fail"](b"captured failure output\n")
         if args == LS_IGNORED:
             return calls["ignored"]
         return b""
@@ -153,3 +154,56 @@ def test_create_prs_lints_before_opening_any_pr(cutting, monkeypatch):
         )
 
     assert created == []
+
+
+def test_lint_passes_quietly(cutting, docs, capsys):
+    cutting._lint_docs(VERSION)
+
+    out = capsys.readouterr().out
+    assert out.splitlines() == [
+        "Linting the docs repo",
+        "  npx markdownlint --config .markdownlintrc . ... ok",
+        "  npm run format:check ... ok",
+        "  npm run lint:js ... ok",
+        "  npm run lint ... ok",
+        "  npm run check:images ... ok",
+        "Docs lint passed",
+    ]
+    assert "Running:" not in out
+    assert "--ignore" not in out
+
+
+def test_lint_failed_step_shows_captured_output(cutting, docs, monkeypatch, capsys):
+    docs["fail"] = {cutting.DOCS_LINT_COMMANDS[2]}
+    monkeypatch.setattr(cutting.click, "confirm", lambda *a, **k: True)
+
+    cutting._lint_docs(VERSION)
+
+    out = capsys.readouterr().out
+    first_pass = out.split("Docs lint failed")[0]
+    assert "  npm run lint:js ... FAILED\ncaptured failure output\n" in first_pass
+    assert "  npm run lint ... ok" in first_pass
+    assert first_pass.count("captured failure output") == 1
+
+
+def test_lint_failures_use_real_execute_command(cutting, monkeypatch, tmp_path, capsys):
+    """Drive the silent / stderr merge / on_fail wiring through a real subprocess."""
+
+    def step(code: int) -> tuple[str, ...]:
+        script = f"import sys; print('to-stdout', flush=True); print('to-stderr', file=sys.stderr); sys.exit({code})"
+        return (sys.executable, "-c", script)
+
+    steps = (step(0), step(1), step(0))
+    monkeypatch.setattr(cutting, "DOCS_LINT_COMMANDS", steps)
+    monkeypatch.setattr(cutting, "_docs_lint_commands", lambda: list(steps))
+    monkeypatch.setattr(cutting.EsphomeDocsProject, "path", tmp_path, raising=False)
+
+    failed = cutting._docs_lint_failures()
+
+    label = " ".join(steps[1])
+    assert failed == [label]
+    out = capsys.readouterr().out
+    assert "Running:" not in out
+    assert "stderr:" not in out
+    assert out.count("... ok") == 2
+    assert f"{label} ... FAILED\nto-stdout\nto-stderr\n" in out

@@ -2,6 +2,7 @@
 
 import datetime
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -432,15 +433,25 @@ def _docs_lint_failures() -> list[str]:
     """Run every docs lint step, returning the ones that failed.
 
     All steps run even after a failure, so one pass shows every problem
-    instead of CI's one-step-at-a-time view. Failures are reported by the
-    step's base command, without the appended ignore arguments.
+    instead of CI's one-step-at-a-time view. Each step prints one line naming
+    its base command (without the appended ignore arguments) and its result;
+    the step's output is only shown when it fails. Failures are reported by
+    the base command.
     """
     failed: list[str] = []
     for base, command in zip(DOCS_LINT_COMMANDS, _docs_lint_commands(), strict=True):
-        try:
-            EsphomeDocsProject.run_command(*command, live=True)
-        except EsphomeReleaseError:
-            failed.append(" ".join(base))
+        label = " ".join(base)
+
+        def on_fail(output: bytes, label: str = label) -> bytes:
+            failed.append(label)
+            click.secho("FAILED", fg="red")
+            click.echo(output.decode(errors="replace"))
+            return output
+
+        click.echo(f"  {label} ... ", nl=False)
+        EsphomeDocsProject.run_command(*command, silent=True, stderr=subprocess.STDOUT, on_fail=on_fail)
+        if label not in failed:
+            click.secho("ok", fg="green")
     return failed
 
 
